@@ -235,6 +235,39 @@ package-management/
               └─ パスワード: changeit
 ```
 
+### 4.4 環境検証処理
+
+インストール後および起動前に、環境が正しく構成されているか検証する。
+
+```
+環境検証開始
+  │
+  ├─ JDK検証
+  │     ├─ bin/java.exe 存在確認
+  │     └─ java -version 実行 → バージョン取得
+  │
+  ├─ Gradle検証
+  │     ├─ bin/gradle.bat 存在確認
+  │     └─ gradle -v 実行 → バージョン取得
+  │
+  ├─ Eclipse検証
+  │     ├─ eclipse.exe 存在確認
+  │     └─ .eclipseproduct 読み込み → バージョン取得
+  │
+  └─ WebLogic検証
+        ├─ wlserver/ ディレクトリ確認
+        └─ registry.xml または .product.properties → バージョン取得
+```
+
+**検証方法の詳細:**
+
+| ツール | 検証方法 | バージョン取得元 |
+|--------|----------|------------------|
+| JDK | コマンド実行 | `java -version` 出力をパース |
+| Gradle | コマンド実行 | `gradle -v` 出力をパース |
+| Eclipse | 設定ファイル | `.eclipseproduct` の `version=` 行 |
+| WebLogic | 設定ファイル | `registry.xml` または `.product.properties` |
+
 ---
 
 ## 5. インターフェース仕様
@@ -277,6 +310,64 @@ package-management/
 | Status | string | SUCCESS / FAILED |
 | Processed | int | 処理成功数 |
 | Failed | int | 処理失敗数（FAILEDの場合のみ） |
+
+### 5.3 検証スクリプト（Test-DevEnv.ps1）
+
+**構文:**
+```powershell
+.\scripts\Test-DevEnv.ps1 -Project <プロジェクト名>
+```
+
+**パラメータ:**
+
+| パラメータ | 型 | 必須 | 説明 |
+|------------|------|------|------|
+| -Project | string | Yes | プロジェクト名 |
+
+**終了コード:**
+
+| コード | 意味 |
+|--------|------|
+| 0 | すべての検証に成功 |
+| 1 | 1つ以上の検証に失敗 |
+
+**検証内容:**
+
+| ツール | 検証項目 | 取得情報 |
+|--------|----------|----------|
+| JDK | java.exe存在 + 実行 | バージョン番号 |
+| Gradle | gradle.bat存在 + 実行 | バージョン番号 |
+| Eclipse | eclipse.exe存在 + 設定ファイル | バージョン、製品名 |
+| WebLogic | ディレクトリ構造 + 設定ファイル | バージョン |
+
+### 5.4 検証モジュールの戻り値
+
+**Test-JdkInstallation / Test-GradleInstallation:**
+
+| キー | 型 | 説明 |
+|------|------|------|
+| Valid | bool | 検証成功/失敗 |
+| ExecutableExists | bool | 実行ファイルの存在 |
+| Version | string | 取得したバージョン |
+| Message | string | 結果メッセージ |
+
+**Test-EclipseInstallation:**
+
+| キー | 型 | 説明 |
+|------|------|------|
+| Valid | bool | 検証成功/失敗 |
+| ExecutableExists | bool | eclipse.exeの存在 |
+| Version | string | 取得したバージョン |
+| ProductName | string | 製品名 |
+| Message | string | 結果メッセージ |
+
+**Test-WebLogicInstallation:**
+
+| キー | 型 | 説明 |
+|------|------|------|
+| Valid | bool | 検証成功/失敗 |
+| Version | string | 取得したバージョン |
+| Message | string | 結果メッセージ |
 
 ---
 

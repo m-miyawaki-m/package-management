@@ -12,6 +12,7 @@ $scriptRoot = $PSScriptRoot
 
 # モジュール読み込み
 Import-Module (Join-Path $scriptRoot "lib\Common.ps1") -Force
+Import-Module (Join-Path $scriptRoot "lib\Validation.ps1") -Force
 Import-Module (Join-Path $scriptRoot "modules\Install-Jdk.ps1") -Force
 Import-Module (Join-Path $scriptRoot "modules\Install-Eclipse.ps1") -Force
 Import-Module (Join-Path $scriptRoot "modules\Install-WebLogic.ps1") -Force
@@ -127,6 +128,18 @@ try {
 }
 catch {
     Write-Log "起動バッチ生成エラー: $_" -Level "FAILED"
+    $results.Failed++
+}
+
+# 環境検証
+$validationResult = Test-AllInstallations `
+    -JdkPath $jdkResult.Path `
+    -GradlePath $gradleResult.Path `
+    -EclipsePath $eclipseResult.Path `
+    -WebLogicPath $weblogicResult.Path
+
+if (-not $validationResult.AllValid) {
+    Write-Log "環境検証で問題が検出されました" -Level "WARN"
     $results.Failed++
 }
 
