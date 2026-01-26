@@ -1,0 +1,24 @@
+@echo off
+chcp 65001 > nul
+setlocal
+
+rem ============================================
+rem {{PROJECT_NAME}} 開発環境 起動バッチ
+rem 生成日時: {{GENERATED_AT}}
+rem ============================================
+
+set JAVA_HOME={{JAVA_HOME}}
+set GRADLE_HOME={{GRADLE_HOME}}
+set WEBLOGIC_HOME={{WEBLOGIC_HOME}}
+set PATH=%JAVA_HOME%\bin;%GRADLE_HOME%\bin;%PATH%
+
+echo ============================================
+echo プロジェクト: {{PROJECT_NAME}}
+echo ============================================
+echo JAVA_HOME: %JAVA_HOME%
+echo GRADLE_HOME: %GRADLE_HOME%
+echo WEBLOGIC_HOME: %WEBLOGIC_HOME%
+echo ============================================
+echo.
+
+start "" "{{ECLIPSE_PATH}}\eclipse.exe" -data "{{WORKSPACE_PATH}}"
