@@ -1,0 +1,85 @@
+{
+  "defaults": {
+    "sourceBase": "\\\\server\\share\\packages",
+    "destBase": "C:\\dev-tools",
+    "7zPath": "C:\\dev-tools\\7zip\\7z.exe"
+  },
+  "tools": [
+    {
+      "name": "7zip",
+      "version": "23.01",
+      "steps": [
+        {
+          "type": "installer",
+          "source": "7zip\\7z2301-x64.exe",
+          "silentArgs": "/S /D=C:\\dev-tools\\7zip"
+        }
+      ]
+    },
+    {
+      "name": "jdk",
+      "version": "17.0.8",
+      "steps": [
+        {
+          "type": "extract",
+          "source": "jdk\\jdk-17.0.8.7z",
+          "destination": "jdk\\17.0.8"
+        },
+        {
+          "type": "env",
+          "name": "JAVA_HOME",
+          "value": "C:\\dev-tools\\jdk\\17.0.8"
+        },
+        {
+          "type": "env",
+          "name": "PATH",
+          "action": "append",
+          "value": "%JAVA_HOME%\\bin"
+        },
+        {
+          "type": "cert",
+          "source": "certs\\internal-ca.cer",
+          "javaHome": "C:\\dev-tools\\jdk\\17.0.8"
+        }
+      ]
+    },
+    {
+      "name": "gradle",
+      "version": "8.5",
+      "steps": [
+        {
+          "type": "extract",
+          "source": "gradle\\gradle-8.5.7z",
+          "destination": "gradle\\8.5"
+        },
+        {
+          "type": "env",
+          "name": "GRADLE_HOME",
+          "value": "C:\\dev-tools\\gradle\\8.5"
+        },
+        {
+          "type": "env",
+          "name": "PATH",
+          "action": "append",
+          "value": "%GRADLE_HOME%\\bin"
+        }
+      ]
+    },
+    {
+      "name": "eclipse",
+      "version": "2024-03",
+      "steps": [
+        {
+          "type": "extract",
+          "source": "eclipse\\eclipse-2024-03.7z",
+          "destination": "eclipse\\2024-03"
+        },
+        {
+          "type": "config",
+          "source": "eclipse\\eclipse.ini",
+          "destination": "eclipse\\2024-03\\eclipse.ini"
+        }
+      ]
+    }
+  ]
+}

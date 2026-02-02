@@ -1,147 +1,104 @@
 # 開発環境パッケージ管理システム
 
-PowerShellスクリプトを使用して、チーム開発環境のツールパッケージを一括管理・インストールするシステム。
+JSONベースの設定ファイルとStep処理方式で、チーム開発環境のツールを一括インストールするシステム。
 
 ## 概要
 
-共有ディレクトリからツールを取得し、ローカル環境にインストール。バッチファイルを実行するだけで開発環境（Eclipse）が起動する状態まで自動構築します。
+共有ディレクトリからツールを取得し、ローカル環境にインストール。管理者権限で `Install.bat` を実行するだけで開発環境を自動構築します。
 
-## 対象ツール
+## 特徴
 
-- JDK
-- Eclipse
-- WebLogic
-- Gradle
-- 証明書（JDKキーストアに登録）
+- **JSONベース設定**: ツール・バージョン・取得先を設定ファイルで管理
+- **Step処理方式**: 展開、インストーラ実行、設定差し替え、環境変数設定、証明書登録を柔軟に組み合わせ
+- **PowerShell 5対応**: Windows標準環境で動作
+- **ログ出力**: コンソールとファイルに処理結果を出力
 
 ## 動作環境
 
 - Windows 10/11
 - PowerShell 5.1以上
+- 管理者権限（環境変数設定に必要）
 - 共有ディレクトリへのアクセス権
+
+## クイックスタート
+
+### 1. 設定ファイルを編集
+
+`config/tools.json` を環境に合わせて編集:
+
+```json
+{
+  "defaults": {
+    "sourceBase": "\\\\your-server\\share\\packages",
+    "destBase": "C:\\dev-tools",
+    "7zPath": "C:\\dev-tools\\7zip\\7z.exe"
+  },
+  "tools": [
+    {
+      "name": "7zip",
+      "version": "23.01",
+      "steps": [
+        { "type": "installer", "source": "7zip\\7z2301-x64.exe", "silentArgs": "/S /D=C:\\dev-tools\\7zip" }
+      ]
+    },
+    {
+      "name": "jdk",
+      "version": "17.0.8",
+      "steps": [
+        { "type": "extract", "source": "jdk\\jdk-17.0.8.7z", "destination": "jdk\\17.0.8" },
+        { "type": "env", "name": "JAVA_HOME", "value": "C:\\dev-tools\\jdk\\17.0.8" },
+        { "type": "env", "name": "PATH", "action": "append", "value": "%JAVA_HOME%\\bin" }
+      ]
+    }
+  ]
+}
+```
+
+### 2. インストール実行
+
+```batch
+Install.bat
+```
+
+管理者権限で実行されます（自動昇格）。
+
+## Stepタイプ
+
+| タイプ | 説明 | 例 |
+|--------|------|-----|
+| `extract` | 7z/ZIP展開 | `{ "type": "extract", "source": "jdk\\jdk-17.0.8.7z", "destination": "jdk\\17.0.8" }` |
+| `installer` | サイレントインストール | `{ "type": "installer", "source": "7zip\\setup.exe", "silentArgs": "/S" }` |
+| `config` | 設定ファイル差し替え | `{ "type": "config", "source": "eclipse\\eclipse.ini", "destination": "eclipse\\2024-03\\eclipse.ini" }` |
+| `env` | 環境変数設定 | `{ "type": "env", "name": "JAVA_HOME", "value": "C:\\dev-tools\\jdk\\17.0.8" }` |
+| `cert` | 証明書登録 | `{ "type": "cert", "source": "certs\\ca.cer", "javaHome": "C:\\dev-tools\\jdk\\17.0.8" }` |
 
 ## ディレクトリ構成
 
 ```
 package-management/
+├── Install.bat                 # エントリーポイント
 ├── config/
-│   ├── settings.json           # 共通設定
-│   └── projects/
-│       └── sample.json         # プロジェクト別設定
+│   └── tools.json              # ツール設定
 ├── scripts/
 │   ├── Install-DevEnv.ps1      # メインスクリプト
-│   ├── lib/
-│   │   └── Common.ps1          # 共通関数
-│   └── modules/
-│       ├── Install-Jdk.ps1
-│       ├── Install-Eclipse.ps1
-│       ├── Install-WebLogic.ps1
-│       ├── Install-Gradle.ps1
-│       └── Install-Certificate.ps1
-└── templates/
-    └── start-eclipse.bat.template
+│   └── lib/
+│       ├── Common.ps1          # ログ、共通関数
+│       └── StepHandlers.ps1    # 各タイプの処理関数
+└── docs/
 ```
-
-## クイックスタート
-
-### 1. 共通設定を編集
-
-`config/settings.json` を環境に合わせて編集:
-
-```json
-{
-  "shareBasePath": "\\\\your-server\\share\\dev-packages",
-  "installBasePath": "C:\\dev-tools",
-  "tools": {
-    "jdk": "jdk",
-    "eclipse": "eclipse",
-    "weblogic": "weblogic",
-    "gradle": "gradle",
-    "certs": "certs"
-  }
-}
-```
-
-### 2. プロジェクト設定を作成
-
-`config/projects/myproject.json` を作成:
-
-```json
-{
-  "name": "myproject",
-  "description": "プロジェクトの説明",
-  "tools": {
-    "jdk": {
-      "version": "17.0.8",
-      "file": "jdk-17.0.8.zip"
-    },
-    "eclipse": {
-      "version": "2024-03",
-      "file": "eclipse-2024-03.zip",
-      "workspace": "C:\\workspace\\myproject"
-    },
-    "weblogic": {
-      "version": "14.1",
-      "file": "weblogic-14.1.zip"
-    },
-    "gradle": {
-      "version": "8.5",
-      "file": "gradle-8.5.zip"
-    }
-  },
-  "certificates": [
-    "internal-ca.cer"
-  ]
-}
-```
-
-### 3. 共有ディレクトリにツールを配置
-
-```
-\\your-server\share\dev-packages\
-├── jdk/
-│   └── jdk-17.0.8.zip
-├── eclipse/
-│   └── eclipse-2024-03.zip
-├── weblogic/
-│   └── weblogic-14.1.zip
-├── gradle/
-│   └── gradle-8.5.zip
-└── certs/
-    └── internal-ca.cer
-```
-
-### 4. インストール実行
-
-```powershell
-.\scripts\Install-DevEnv.ps1 -Project myproject
-```
-
-### 5. 開発環境を起動
-
-```batch
-C:\dev-tools\bin\start-myproject.bat
-```
-
-## 機能
-
-- **バージョン共存**: 同一ツールの複数バージョンをインストール可能
-- **スキップ機能**: インストール済みバージョンは自動スキップ
-- **ログ出力**: コンソールとファイルに処理結果を出力
-- **証明書登録**: JDKのcacertsに証明書を自動登録
 
 ## ログ
 
 インストールログは以下に出力されます:
 
 ```
-C:\dev-tools\logs\install-myproject-20260127-143052.log
+C:\dev-tools\logs\install-20260203-143052.log
 ```
 
 ## ドキュメント
 
-- [設計書](docs/plans/2026-01-27-dev-env-package-management-design.md)
-- [仕様書](docs/specifications.md)
+- [処理フロー](docs/processing-flow.md)
+- [Step-Based Installer 設計書](docs/plans/2026-02-03-step-based-installer-design.md)
 
 ## ライセンス
 

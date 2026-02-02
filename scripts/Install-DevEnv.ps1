@@ -4,42 +4,28 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string]$Project
+    [string]$ConfigPath
 )
 
 $ErrorActionPreference = "Stop"
 $scriptRoot = $PSScriptRoot
 
 # モジュール読み込み
-Import-Module (Join-Path $scriptRoot "lib\Common.ps1") -Force
-Import-Module (Join-Path $scriptRoot "lib\Validation.ps1") -Force
-Import-Module (Join-Path $scriptRoot "modules\Install-Jdk.ps1") -Force
-Import-Module (Join-Path $scriptRoot "modules\Install-Eclipse.ps1") -Force
-Import-Module (Join-Path $scriptRoot "modules\Install-WebLogic.ps1") -Force
-Import-Module (Join-Path $scriptRoot "modules\Install-Gradle.ps1") -Force
-Import-Module (Join-Path $scriptRoot "modules\Install-Certificate.ps1") -Force
+. (Join-Path $scriptRoot "lib\Common.ps1")
+. (Join-Path $scriptRoot "lib\StepHandlers.ps1")
 
 # 設定ファイル読み込み
-$configRoot = Join-Path (Split-Path $scriptRoot -Parent) "config"
-$settingsPath = Join-Path $configRoot "settings.json"
-$projectPath = Join-Path $configRoot "projects" "$Project.json"
-
-if (-not (Test-Path $settingsPath)) {
-    Write-Error "設定ファイルが見つかりません: $settingsPath"
+if (-not (Test-Path $ConfigPath)) {
+    Write-Error "設定ファイルが見つかりません: $ConfigPath"
     exit 1
 }
 
-if (-not (Test-Path $projectPath)) {
-    Write-Error "プロジェクト設定が見つかりません: $projectPath"
-    exit 1
-}
-
-$settings = Get-Content $settingsPath -Raw | ConvertFrom-Json -AsHashtable
-$projectConfig = Get-Content $projectPath -Raw | ConvertFrom-Json -AsHashtable
+$config = Get-Content $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$defaults = $config.defaults
 
 # ログ初期化
-Initialize-Log -ProjectName $Project -LogBasePath $settings.installBasePath
-Write-Log "設定ファイル: $projectPath"
+Initialize-Log -LogBasePath $defaults.destBase
+Write-Log "設定ファイル: $ConfigPath"
 
 # 結果カウンター
 $results = @{
@@ -48,99 +34,73 @@ $results = @{
     Failed = 0
 }
 
-function Update-Results {
-    param([string]$Status)
-    switch ($Status) {
-        "SUCCESS" { $script:results.Success++ }
-        "SKIPPED" { $script:results.Skipped++ }
-        "FAILED"  { $script:results.Failed++ }
-    }
-}
-
-# 事前チェック
+# 共有ディレクトリ接続確認
 Write-LogSection "事前チェック"
 
-if (-not (Test-SharePath -Path $settings.shareBasePath)) {
+if (-not (Test-SharePath -Path $defaults.sourceBase)) {
     Write-LogSummary -Success 0 -Skipped 0 -Failed 1
     exit 1
 }
 
-# JDKインストール
-$jdkResult = Install-Jdk -Settings $settings -ToolConfig $projectConfig.tools.jdk
-Update-Results -Status $jdkResult.Status
+# ツールループ
+foreach ($tool in $config.tools) {
+    Write-LogSection "$($tool.name) v$($tool.version)"
 
-if ($jdkResult.Status -eq "FAILED") {
-    Write-Log "JDKのインストールに失敗したため、処理を中断します" -Level "FAILED"
-    Write-LogSummary -Success $results.Success -Skipped $results.Skipped -Failed $results.Failed
-    exit 1
-}
+    $toolSourceBase = if ($tool.sourceBase) { $tool.sourceBase } else { $null }
+    $toolFailed = $false
 
-# 証明書インストール（JDKが必要）
-if ($projectConfig.certificates -and $projectConfig.certificates.Count -gt 0) {
-    $certResult = Install-Certificate -Settings $settings -Certificates $projectConfig.certificates -JavaHome $jdkResult.Path
-    if ($certResult.Status -eq "SUCCESS") {
-        $results.Success++
-    } else {
-        $results.Failed++
+    # Stepループ
+    $stepIndex = 0
+    foreach ($step in $tool.steps) {
+        $stepIndex++
+        $stepType = $step.type
+
+        Write-Log "[$stepIndex/$($tool.steps.Count)] $stepType"
+
+        $stepResult = $null
+
+        switch ($stepType) {
+            "extract" {
+                $stepResult = Invoke-ExtractStep -Step $step -Defaults $defaults -ToolSourceBase $toolSourceBase
+            }
+            "installer" {
+                $stepResult = Invoke-InstallerStep -Step $step -Defaults $defaults -ToolSourceBase $toolSourceBase
+            }
+            "config" {
+                $stepResult = Invoke-ConfigStep -Step $step -Defaults $defaults -ToolSourceBase $toolSourceBase
+            }
+            "env" {
+                $stepResult = Invoke-EnvStep -Step $step -Defaults $defaults
+            }
+            "cert" {
+                $stepResult = Invoke-CertStep -Step $step -Defaults $defaults -ToolSourceBase $toolSourceBase
+            }
+            default {
+                Write-Log "  エラー: 未知のstepタイプ: $stepType" -Level "FAILED"
+                $stepResult = @{ Success = $false; Message = "未知のstepタイプ" }
+            }
+        }
+
+        # 結果カウント
+        if ($stepResult.Success) {
+            if ($stepResult.Skipped) {
+                $results.Skipped++
+            } else {
+                $results.Success++
+            }
+        } else {
+            $results.Failed++
+            $toolFailed = $true
+            Write-Log "  ツール '$($tool.name)' の残りのstepをスキップします" -Level "WARN"
+            break
+        }
     }
-}
 
-# Gradleインストール
-$gradleResult = Install-Gradle -Settings $settings -ToolConfig $projectConfig.tools.gradle
-Update-Results -Status $gradleResult.Status
-
-# WebLogicインストール
-$weblogicResult = Install-WebLogic -Settings $settings -ToolConfig $projectConfig.tools.weblogic
-Update-Results -Status $weblogicResult.Status
-
-# Eclipseインストール
-$eclipseResult = Install-Eclipse -Settings $settings -ToolConfig $projectConfig.tools.eclipse
-Update-Results -Status $eclipseResult.Status
-
-# 起動バッチ生成
-Write-LogSection "起動バッチ生成"
-
-$templatePath = Join-Path (Split-Path $scriptRoot -Parent) "templates" "start-eclipse.bat.template"
-$binPath = Join-Path $settings.installBasePath "bin"
-$batchPath = Join-Path $binPath "start-$Project.bat"
-
-if (-not (Test-Path $binPath)) {
-    New-Item -ItemType Directory -Path $binPath -Force | Out-Null
-}
-
-try {
-    $template = Get-Content $templatePath -Raw
-
-    $batchContent = $template `
-        -replace '\{\{PROJECT_NAME\}\}', $projectConfig.name `
-        -replace '\{\{GENERATED_AT\}\}', (Get-Date -Format "yyyy-MM-dd HH:mm:ss") `
-        -replace '\{\{JAVA_HOME\}\}', $jdkResult.Path `
-        -replace '\{\{GRADLE_HOME\}\}', $gradleResult.Path `
-        -replace '\{\{WEBLOGIC_HOME\}\}', $weblogicResult.Path `
-        -replace '\{\{ECLIPSE_PATH\}\}', $eclipseResult.Path `
-        -replace '\{\{WORKSPACE_PATH\}\}', $eclipseResult.Workspace
-
-    Set-Content -Path $batchPath -Value $batchContent -Encoding UTF8
-
-    Write-Log "起動バッチ: $batchPath"
-    Write-Log "結果: SUCCESS" -Level "SUCCESS"
-    $results.Success++
-}
-catch {
-    Write-Log "起動バッチ生成エラー: $_" -Level "FAILED"
-    $results.Failed++
-}
-
-# 環境検証
-$validationResult = Test-AllInstallations `
-    -JdkPath $jdkResult.Path `
-    -GradlePath $gradleResult.Path `
-    -EclipsePath $eclipseResult.Path `
-    -WebLogicPath $weblogicResult.Path
-
-if (-not $validationResult.AllValid) {
-    Write-Log "環境検証で問題が検出されました" -Level "WARN"
-    $results.Failed++
+    if ($toolFailed) {
+        Write-Log "[$($tool.name)] 失敗" -Level "FAILED"
+    } else {
+        Write-Log "[$($tool.name)] 完了" -Level "SUCCESS"
+    }
 }
 
 # サマリー出力
@@ -150,6 +110,4 @@ if ($results.Failed -gt 0) {
     exit 1
 }
 
-Write-Host ""
-Write-Host "開発環境を起動するには以下を実行してください:" -ForegroundColor Cyan
-Write-Host "  $batchPath" -ForegroundColor Green
+exit 0

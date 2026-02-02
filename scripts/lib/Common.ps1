@@ -4,8 +4,12 @@
 $script:LogFile = $null
 
 function Initialize-Log {
+    <#
+    .SYNOPSIS
+        ログを初期化
+    #>
     param(
-        [string]$ProjectName,
+        [Parameter(Mandatory)]
         [string]$LogBasePath
     )
 
@@ -16,15 +20,20 @@ function Initialize-Log {
         New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     }
 
-    $script:LogFile = Join-Path $logDir "install-$ProjectName-$timestamp.log"
+    $script:LogFile = Join-Path $logDir "install-$timestamp.log"
 
     Write-Log "================================================================================"
-    Write-Log "Install-DevEnv 開始"
-    Write-Log "プロジェクト: $ProjectName"
+    Write-Log "開発環境パッケージ インストール開始"
+    Write-Log "日時: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    Write-Log "ログファイル: $($script:LogFile)"
     Write-Log "================================================================================"
 }
 
 function Write-Log {
+    <#
+    .SYNOPSIS
+        ログ出力（コンソール＋ファイル）
+    #>
     param(
         [string]$Message,
         [ValidateSet("INFO", "SUCCESS", "SKIPPED", "FAILED", "WARN")]
@@ -50,12 +59,20 @@ function Write-Log {
 }
 
 function Write-LogSection {
+    <#
+    .SYNOPSIS
+        セクションヘッダを出力
+    #>
     param([string]$SectionName)
     Write-Log ""
     Write-Log "=== $SectionName ==="
 }
 
 function Write-LogSummary {
+    <#
+    .SYNOPSIS
+        サマリーを出力
+    #>
     param(
         [int]$Success,
         [int]$Skipped,
@@ -63,16 +80,20 @@ function Write-LogSummary {
     )
     Write-Log ""
     Write-Log "================================================================================"
-    Write-Log "Install-DevEnv 完了"
+    Write-Log "インストール完了"
     Write-Log "成功: $Success, スキップ: $Skipped, 失敗: $Failed"
     Write-Log "================================================================================"
 }
 
 function Test-SharePath {
+    <#
+    .SYNOPSIS
+        共有パスの接続確認
+    #>
     param([string]$Path)
 
     if (Test-Path $Path) {
-        Write-Log "共有ディレクトリ接続確認: OK"
+        Write-Log "共有ディレクトリ接続確認: OK ($Path)"
         return $true
     } else {
         Write-Log "共有ディレクトリに接続できません: $Path" -Level "FAILED"
@@ -80,56 +101,4 @@ function Test-SharePath {
     }
 }
 
-function Test-ZipFile {
-    param(
-        [string]$ShareBasePath,
-        [string]$ToolFolder,
-        [string]$FileName
-    )
-
-    $filePath = Join-Path $ShareBasePath $ToolFolder $FileName
-
-    if (Test-Path $filePath) {
-        return $true
-    } else {
-        Write-Log "ZIPファイルが見つかりません: $filePath" -Level "FAILED"
-        return $false
-    }
-}
-
-function Expand-ToolZip {
-    param(
-        [string]$SourceZip,
-        [string]$DestinationPath
-    )
-
-    try {
-        if (-not (Test-Path $DestinationPath)) {
-            New-Item -ItemType Directory -Path $DestinationPath -Force | Out-Null
-        }
-
-        Expand-Archive -Path $SourceZip -DestinationPath $DestinationPath -Force
-        return $true
-    }
-    catch {
-        Write-Log "ZIP展開エラー: $_" -Level "FAILED"
-        return $false
-    }
-}
-
-function Get-InstalledVersion {
-    param(
-        [string]$InstallBasePath,
-        [string]$ToolName
-    )
-
-    $toolPath = Join-Path $InstallBasePath $ToolName
-
-    if (-not (Test-Path $toolPath)) {
-        return @()
-    }
-
-    return Get-ChildItem -Path $toolPath -Directory | Select-Object -ExpandProperty Name
-}
-
-Export-ModuleMember -Function *
+Export-ModuleMember -Function Initialize-Log, Write-Log, Write-LogSection, Write-LogSummary, Test-SharePath
