@@ -1,0 +1,34 @@
+{
+  "defaults": {
+    "sourceRoot": "\\\\server\\share\\packages",
+    "localRoot": "C:\\packages",
+    "destRoot": "C:\\dev-tools",
+    "backupRoot": "C:\\packages\\bk",
+    "logRoot": "C:\\dev-tools\\logs",
+    "7zPath": "C:\\dev-tools\\7zip\\7z.exe",
+    "successCodes": [0, 3010]
+  },
+  "tools": [
+    {
+      "name": "notepadpp",
+      "type": "installer",
+      "source": "notepadpp",
+      "version": "8.6.2",
+      "displayName": "Notepad++",
+      "silentArgs": "/S"
+    },
+    {
+      "name": "jdk",
+      "type": "extract",
+      "source": "jdk",
+      "destination": "C:\\dev-tools\\jdk\\17"
+    },
+    {
+      "name": "config-templates",
+      "type": "copy",
+      "source": "config-templates",
+      "destination": "C:\\dev-tools\\config-templates"
+    }
+  ],
+  "repositories": []
+}
