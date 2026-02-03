@@ -1,5 +1,10 @@
 # scripts/modules/FileManager.psm1
 # ファイル取得・ハッシュ比較・バックアップモジュール
+#
+# 分岐網羅コメント凡例:
+#   [B-XX] = 分岐ポイント番号
+#   T: = 真(True)の場合の処理
+#   F: = 偽(False)の場合の処理
 
 # スクリプトスコープ変数
 $script:LastProgressTime = $null
@@ -28,6 +33,9 @@ function Get-FileHashSHA256 {
         [string]$OperationName = "ハッシュ計算中"
     )
 
+    # [B-01] ファイル存在チェック
+    #   T: ハッシュ計算処理へ続行
+    #   F: $null を返して終了（ファイルなし）
     if (-not (Test-Path $FilePath)) {
         return $null
     }
@@ -47,15 +55,25 @@ function Get-FileHashSHA256 {
         $buffer = New-Object byte[] $bufferSize
         $totalRead = 0
 
+        # [B-02] ファイル読み込みループ（バッファ単位）
+        #   条件: 読み込みバイト数 > 0
+        #   T: バッファをハッシュ計算に追加し、次のチャンクへ
+        #   F: ループ終了（ファイル末尾到達）
         while (($read = $stream.Read($buffer, 0, $bufferSize)) -gt 0) {
             $sha256.TransformBlock($buffer, 0, $read, $buffer, 0) | Out-Null
             $totalRead += $read
 
-            # 進行度表示（5秒経過 かつ 5%以上変化）
+            # [B-03] ゼロ除算防止チェック
+            #   T: 進行度計算と表示判定へ
+            #   F: 進行度表示をスキップ
             if ($fileSize -gt 0) {
                 $currentPercent = [math]::Round(($totalRead / $fileSize) * 100)
                 $elapsed = (Get-Date) - $script:LastProgressTime
 
+                # [B-04] 進行度表示条件判定
+                #   条件: 5秒以上経過 かつ 5%以上変化
+                #   T: 進行度をログ出力し、時刻とパーセントを更新
+                #   F: 進行度表示をスキップ（頻繁な出力を抑制）
                 if ($elapsed.TotalSeconds -ge 5 -and ($currentPercent - $script:LastProgressPercent) -ge 5) {
                     Write-LogProgress -Operation $OperationName -CurrentBytes $totalRead -TotalBytes $fileSize
                     $script:LastProgressTime = Get-Date
@@ -104,7 +122,9 @@ function Copy-FileWithProgress {
         [string]$OperationName = "ファイル取得中"
     )
 
-    # ソースファイル存在確認
+    # [B-05] ソースファイル存在チェック
+    #   T: コピー処理へ続行
+    #   F: エラーログ出力、$false を返して終了
     if (-not (Test-Path $Source)) {
         Write-Log -Message "ソースファイルが存在しません: $Source" -Level "ERROR"
         return $false
@@ -113,7 +133,9 @@ function Copy-FileWithProgress {
     $sourceInfo = Get-Item $Source
     $fileSize = $sourceInfo.Length
 
-    # コピー先ディレクトリ作成
+    # [B-06] コピー先ディレクトリ存在チェック
+    #   T: ディレクトリ作成をスキップ
+    #   F: 親ディレクトリを新規作成
     $destDir = Split-Path $Destination -Parent
     if (-not (Test-Path $destDir)) {
         New-Item -ItemType Directory -Path $destDir -Force | Out-Null
@@ -131,15 +153,25 @@ function Copy-FileWithProgress {
         $buffer = New-Object byte[] $bufferSize
         $totalRead = 0
 
+        # [B-07] ファイルコピーループ（バッファ単位）
+        #   条件: 読み込みバイト数 > 0
+        #   T: バッファをコピー先に書き込み、次のチャンクへ
+        #   F: ループ終了（ファイル末尾到達）
         while (($read = $sourceStream.Read($buffer, 0, $bufferSize)) -gt 0) {
             $destStream.Write($buffer, 0, $read)
             $totalRead += $read
 
-            # 進行度表示（5秒経過 かつ 5%以上変化）
+            # [B-08] ゼロ除算防止チェック
+            #   T: 進行度計算と表示判定へ
+            #   F: 進行度表示をスキップ
             if ($fileSize -gt 0) {
                 $currentPercent = [math]::Round(($totalRead / $fileSize) * 100)
                 $elapsed = (Get-Date) - $script:LastProgressTime
 
+                # [B-09] 進行度表示条件判定
+                #   条件: 5秒以上経過 かつ 5%以上変化
+                #   T: 進行度をログ出力し、時刻とパーセントを更新
+                #   F: 進行度表示をスキップ（頻繁な出力を抑制）
                 if ($elapsed.TotalSeconds -ge 5 -and ($currentPercent - $script:LastProgressPercent) -ge 5) {
                     Write-LogProgress -Operation $OperationName -CurrentBytes $totalRead -TotalBytes $fileSize
                     $script:LastProgressTime = Get-Date
@@ -148,7 +180,9 @@ function Copy-FileWithProgress {
             }
         }
 
-        # 100%表示
+        # [B-10] 完了時100%表示判定
+        #   T: 100%表示を出力
+        #   F: 0バイトファイルの場合は表示しない
         if ($fileSize -gt 0) {
             Write-LogProgress -Operation $OperationName -CurrentBytes $fileSize -TotalBytes $fileSize
         }
@@ -193,10 +227,16 @@ function Backup-File {
         [string]$Timestamp
     )
 
+    # [B-11] バックアップ対象ファイル存在チェック
+    #   T: バックアップ処理へ続行
+    #   F: $false を返して終了（バックアップ不要）
     if (-not (Test-Path $FilePath)) {
         return $false
     }
 
+    # [B-12] バックアップディレクトリ存在チェック
+    #   T: ディレクトリ作成をスキップ
+    #   F: タイムスタンプ付きディレクトリを新規作成
     $backupDir = Join-Path $BackupRoot $Timestamp
     if (-not (Test-Path $backupDir)) {
         New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
@@ -205,6 +245,9 @@ function Backup-File {
     $fileName = [System.IO.Path]::GetFileName($FilePath)
     $backupPath = Join-Path $backupDir $fileName
 
+    # [B-13] ファイル移動例外処理
+    #   T(try成功): $true を返す
+    #   F(catch):   エラーログ出力、$false を返す
     try {
         Move-Item -Path $FilePath -Destination $backupPath -Force
         Write-Log -Message "バックアップ: $FilePath → $backupPath" -Level "INFO"
@@ -239,6 +282,9 @@ function Get-SingleFileFromFolder {
         [string]$ExcludeFile = $null
     )
 
+    # [B-14] フォルダ存在チェック
+    #   T: ファイル取得処理へ続行
+    #   F: エラー結果を返して終了
     if (-not (Test-Path $FolderPath)) {
         return @{
             Success = $false
@@ -248,10 +294,16 @@ function Get-SingleFileFromFolder {
 
     $files = Get-ChildItem -Path $FolderPath -File
 
+    # [B-15] 除外ファイル指定チェック
+    #   T: 指定ファイルをリストから除外
+    #   F: 除外処理をスキップ
     if ($ExcludeFile) {
         $files = $files | Where-Object { $_.Name -ne $ExcludeFile }
     }
 
+    # [B-16] ファイル0件チェック
+    #   T: エラー結果を返して終了
+    #   F: ファイル数判定へ続行
     if ($files.Count -eq 0) {
         return @{
             Success = $false
@@ -259,6 +311,9 @@ function Get-SingleFileFromFolder {
         }
     }
 
+    # [B-17] ファイル複数件チェック
+    #   T: エラー結果を返して終了（曖昧性回避）
+    #   F: 単一ファイルを返す
     if ($files.Count -gt 1) {
         return @{
             Success = $false
@@ -290,7 +345,13 @@ function Test-ShareAccess {
         [string]$SharePath
     )
 
+    # [B-18] 共有アクセス例外処理
+    #   T(try成功): Test-Path結果を返す
+    #   F(catch):   $false を返す（アクセス不可）
     try {
+        # [B-19] パス存在チェック
+        #   T: $true を返す（アクセス可能）
+        #   F: $false を返す（パス不存在）
         if (Test-Path $SharePath) {
             return $true
         }

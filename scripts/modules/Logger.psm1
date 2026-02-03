@@ -1,5 +1,10 @@
 # scripts/modules/Logger.psm1
 # ログ出力モジュール
+#
+# 分岐網羅コメント凡例:
+#   [B-XX] = 分岐ポイント番号
+#   T: = 真(True)の場合の処理
+#   F: = 偽(False)の場合の処理
 
 # スクリプトスコープ変数
 $script:LogFile = $null
@@ -25,7 +30,9 @@ function Initialize-Log {
     $script:StartTime = Get-Date
     $timestamp = $script:StartTime.ToString("yyyyMMdd-HHmmss")
 
-    # ログディレクトリ作成
+    # [B-01] ログディレクトリ存在チェック
+    #   T: ディレクトリ作成をスキップ
+    #   F: ディレクトリを新規作成
     if (-not (Test-Path $LogRoot)) {
         New-Item -ItemType Directory -Path $LogRoot -Force | Out-Null
     }
@@ -64,7 +71,10 @@ function Write-Log {
         [switch]$IsSection
     )
 
-    # ログレベルプレフィックス（区切り線以外）
+    # [B-02] ログレベルプレフィックス付与判定
+    #   条件: IsSection=false かつ 区切り線でない かつ タイムスタンプ行でない
+    #   T: "[LEVEL]\t" プレフィックスを付与
+    #   F: プレフィックスなし（区切り線やセクションヘッダ）
     $logPrefix = ""
     if (-not $IsSection -and $Message -notmatch "^=+$" -and $Message -notmatch "^-+$" -and $Message -notmatch "^\[.*\]") {
         $logPrefix = "[$Level]`t"
@@ -72,10 +82,20 @@ function Write-Log {
 
     $logMessage = "$logPrefix$Message"
 
-    # コンソール出力（色分け）
+    # [B-03] コンソール出力色分け - セクション判定
+    #   T: シアン色で出力（区切り線・セクションヘッダ）
+    #   F: ログレベルに応じた色で出力
     if ($IsSection -or $Message -match "^=+$" -or $Message -match "^-+$") {
         Write-Host $logMessage -ForegroundColor Cyan
     } else {
+        # [B-04] ログレベル別色分け (switch)
+        #   INFO:    白色（通常情報）
+        #   SUCCESS: 緑色（処理成功）
+        #   SKIPPED: 黄色（スキップ）
+        #   WARNING: 黄色（警告）
+        #   ERROR:   赤色（エラー）
+        #   FATAL:   赤背景白文字（致命的エラー）
+        #   default: デフォルト色
         switch ($Level) {
             "INFO"    { Write-Host $logMessage -ForegroundColor White }
             "SUCCESS" { Write-Host $logMessage -ForegroundColor Green }
@@ -87,7 +107,9 @@ function Write-Log {
         }
     }
 
-    # ファイル出力
+    # [B-05] ログファイル出力判定
+    #   T: ファイルに追記出力
+    #   F: ファイル出力なし（Initialize-Log未実行時）
     if ($script:LogFile) {
         Add-Content -Path $script:LogFile -Value $logMessage -Encoding UTF8
     }
@@ -141,7 +163,9 @@ function Write-LogProgress {
     $currentMB = [math]::Round($CurrentBytes / 1MB, 0)
     $totalMB = [math]::Round($TotalBytes / 1MB, 0)
 
-    # パーセント計算
+    # [B-06] ゼロ除算防止チェック
+    #   T: パーセント計算実行
+    #   F: 0%のまま（TotalBytesが0の場合）
     $percent = 0
     if ($TotalBytes -gt 0) {
         $percent = [math]::Round(($CurrentBytes / $TotalBytes) * 100, 0)
@@ -233,6 +257,9 @@ function Write-Summary {
         $localVer = $result.LocalVersion.PadRight(14).Substring(0, 14)
         $sharedVer = $result.SharedVersion.PadRight(14).Substring(0, 14)
         $status = $result.Status.PadRight(8).Substring(0, 8)
+        # [B-07] 備考欄の長さ調整
+        #   T: 16文字で切り詰め（長すぎる場合）
+        #   F: 16文字まで右パディング
         $note = if ($result.Note.Length -gt 16) { $result.Note.Substring(0, 16) } else { $result.Note.PadRight(16) }
 
         $summaryLines += "| $toolName | $type | $localVer | $sharedVer | $status | $note |"
@@ -256,7 +283,9 @@ function Write-Summary {
         Write-Log $line -Level "INFO"
     }
 
-    # サマリーファイルに出力
+    # [B-08] サマリーファイル出力判定
+    #   T: サマリーファイルに出力
+    #   F: ファイル出力なし（Initialize-Log未実行時）
     if ($script:SummaryFile) {
         $summaryLines | Out-File -FilePath $script:SummaryFile -Encoding UTF8
     }

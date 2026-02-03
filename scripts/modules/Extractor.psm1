@@ -1,5 +1,10 @@
 # scripts/modules/Extractor.psm1
 # 7z/zip解凍モジュール
+#
+# 分岐網羅コメント凡例:
+#   [B-XX] = 分岐ポイント番号
+#   T: = 真(True)の場合の処理
+#   F: = 偽(False)の場合の処理
 
 function Invoke-Extract {
     <#
@@ -41,24 +46,33 @@ function Invoke-Extract {
         [string]$Timestamp
     )
 
-    # アーカイブ存在確認
+    # [B-01] アーカイブ存在チェック
+    #   T: 解凍処理へ続行
+    #   F: エラーログ出力、$false を返して終了
     if (-not (Test-Path $ArchivePath)) {
         Write-Log -Message "アーカイブが存在しません: $ArchivePath" -Level "ERROR"
         return $false
     }
 
-    # 解凍先が既に存在する場合はバックアップ
+    # [B-02] 解凍先ディレクトリ存在チェック
+    #   T: 既存ディレクトリをバックアップ後、解凍処理へ
+    #   F: バックアップをスキップ
     if (Test-Path $Destination) {
         Write-Log -Message "既存ディレクトリをバックアップします: $Destination" -Level "INFO"
 
         $backupResult = Backup-Directory -DirectoryPath $Destination -BackupRoot $BackupRoot -Timestamp $Timestamp -SevenZipPath $SevenZipPath
+        # [B-03] バックアップ結果チェック
+        #   T: 解凍処理へ続行
+        #   F: エラーログ出力、$false を返して終了
         if (-not $backupResult) {
             Write-Log -Message "バックアップに失敗しました" -Level "ERROR"
             return $false
         }
     }
 
-    # 解凍先ディレクトリ作成
+    # [B-04] 解凍先親ディレクトリ存在チェック
+    #   T: ディレクトリ作成をスキップ
+    #   F: 親ディレクトリを新規作成
     $parentDir = Split-Path $Destination -Parent
     if (-not (Test-Path $parentDir)) {
         New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
@@ -73,8 +87,14 @@ function Invoke-Extract {
     # 7z.exe または Expand-Archive を使用
     $extension = [System.IO.Path]::GetExtension($ArchivePath).ToLower()
 
+    # [B-05] 解凍方式判定
+    #   条件: .zipファイル かつ 7z.exe不存在
+    #   T: PowerShell標準のExpand-Archiveを使用
+    #   F: 7z.exeを使用（7zファイルまたは7z.exe存在時）
     if ($extension -eq ".zip" -and -not (Test-Path $SevenZipPath)) {
-        # 7z.exeがない場合、.zipはExpand-Archiveを使用
+        # [B-06] Expand-Archive例外処理
+        #   T(try成功): $true を返す
+        #   F(catch):   エラーログ出力、$false を返す
         try {
             Expand-Archive -Path $ArchivePath -DestinationPath $Destination -Force
             Write-Log -Message "解凍完了" -Level "INFO"
@@ -86,16 +106,24 @@ function Invoke-Extract {
         }
     }
     else {
-        # 7z.exeを使用
+        # [B-07] 7z.exe存在チェック
+        #   T: 7z.exeで解凍処理へ続行
+        #   F: エラーログ出力、$false を返して終了
         if (-not (Test-Path $SevenZipPath)) {
             Write-Log -Message "7z.exeが見つかりません: $SevenZipPath" -Level "ERROR"
             return $false
         }
 
+        # [B-08] 7z.exe実行例外処理
+        #   T(try成功): 終了コード判定へ
+        #   F(catch):   エラーログ出力、$false を返す
         try {
             $arguments = "x `"$ArchivePath`" -o`"$Destination`" -y"
             $process = Start-Process -FilePath $SevenZipPath -ArgumentList $arguments -Wait -PassThru -NoNewWindow
 
+            # [B-09] 7z.exe終了コード判定
+            #   T(ExitCode=0): $true を返す
+            #   F(その他):     エラーログ出力、$false を返す
             if ($process.ExitCode -eq 0) {
                 Write-Log -Message "解凍完了" -Level "INFO"
                 return $true
@@ -147,10 +175,16 @@ function Backup-Directory {
         [string]$SevenZipPath
     )
 
+    # [B-10] バックアップ対象ディレクトリ存在チェック
+    #   T: バックアップ処理へ続行
+    #   F: $true を返して終了（バックアップ不要）
     if (-not (Test-Path $DirectoryPath)) {
         return $true
     }
 
+    # [B-11] バックアップディレクトリ存在チェック
+    #   T: ディレクトリ作成をスキップ
+    #   F: タイムスタンプ付きディレクトリを新規作成
     $backupDir = Join-Path $BackupRoot $Timestamp
     if (-not (Test-Path $backupDir)) {
         New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
@@ -162,12 +196,20 @@ function Backup-Directory {
 
     Write-Log -Message "ディレクトリを圧縮してバックアップ: $backupPath" -Level "INFO"
 
+    # [B-12] 圧縮方式判定
+    #   T: 7z.exeで7z形式に圧縮
+    #   F: PowerShell標準でzip形式に圧縮
     if (Test-Path $SevenZipPath) {
-        # 7z.exeで圧縮
+        # [B-13] 7z.exe圧縮例外処理
+        #   T(try成功): 終了コード判定へ
+        #   F(catch):   エラーログ出力、$false を返す
         try {
             $arguments = "a `"$backupPath`" `"$DirectoryPath`" -mx=1"
             $process = Start-Process -FilePath $SevenZipPath -ArgumentList $arguments -Wait -PassThru -NoNewWindow
 
+            # [B-14] 7z.exe終了コード判定
+            #   T(ExitCode≠0): エラーログ出力、$false を返す
+            #   F(ExitCode=0): 圧縮成功、元ディレクトリ削除へ
             if ($process.ExitCode -ne 0) {
                 Write-Log -Message "圧縮エラー: exit code $($process.ExitCode)" -Level "ERROR"
                 return $false
@@ -179,7 +221,9 @@ function Backup-Directory {
         }
     }
     else {
-        # 7z.exeがない場合はzipで圧縮
+        # [B-15] Compress-Archive例外処理
+        #   T(try成功): 圧縮成功、元ディレクトリ削除へ
+        #   F(catch):   エラーログ出力、$false を返す
         $backupPath = Join-Path $backupDir "$dirName-$Timestamp.zip"
         try {
             Compress-Archive -Path $DirectoryPath -DestinationPath $backupPath -Force

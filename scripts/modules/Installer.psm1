@@ -1,5 +1,10 @@
 # scripts/modules/Installer.psm1
 # exe/msiインストーラー実行・レジストリバージョン確認モジュール
+#
+# 分岐網羅コメント凡例:
+#   [B-XX] = 分岐ポイント番号
+#   T: = 真(True)の場合の処理
+#   F: = 偽(False)の場合の処理
 
 function Get-InstalledVersion {
     <#
@@ -28,13 +33,19 @@ function Get-InstalledVersion {
         "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
     )
 
+    # [B-01] レジストリパスループ（64bit→32bit順）
     foreach ($path in $registryPaths) {
+        # [B-02] レジストリアクセス例外処理
+        #   T(try成功): アプリ検索結果判定へ
+        #   F(catch):   次のレジストリパスへ続行
         try {
             $apps = Get-ItemProperty $path -ErrorAction SilentlyContinue |
                     Where-Object { $_.DisplayName -like "*$DisplayName*" }
 
+            # [B-03] アプリ発見判定
+            #   T: 最初の一致を返して終了
+            #   F: 次のレジストリパスへ続行
             if ($apps) {
-                # 最初に見つかったものを返す
                 $app = $apps | Select-Object -First 1
                 return @{
                     Found = $true
@@ -48,6 +59,8 @@ function Get-InstalledVersion {
         }
     }
 
+    # [B-04] ループ終了（未発見）
+    #   全レジストリパス検索後、アプリが見つからなかった場合
     return @{
         Found = $false
         Version = $null
@@ -85,6 +98,9 @@ function Invoke-SilentInstall {
         [int[]]$SuccessCodes = @(0, 3010)
     )
 
+    # [B-05] インストーラー存在チェック
+    #   T: インストール処理へ続行
+    #   F: エラーログ出力、失敗結果を返して終了
     if (-not (Test-Path $InstallerPath)) {
         Write-Log -Message "インストーラーが存在しません: $InstallerPath" -Level "ERROR"
         return @{
@@ -95,10 +111,16 @@ function Invoke-SilentInstall {
 
     Write-Log -Message "インストーラー実行: $InstallerPath $SilentArgs" -Level "INFO"
 
+    # [B-06] インストーラー実行例外処理
+    #   T(try成功): 終了コード判定へ
+    #   F(catch):   エラーログ出力、失敗結果を返す
     try {
         $process = Start-Process -FilePath $InstallerPath -ArgumentList $SilentArgs -Wait -PassThru -NoNewWindow
         $exitCode = $process.ExitCode
 
+        # [B-07] 終了コード成功判定
+        #   T: 成功結果を返す（0または3010）
+        #   F: エラーログ出力、失敗結果を返す
         if ($exitCode -in $SuccessCodes) {
             Write-Log -Message "インストール完了 (exit code: $exitCode)" -Level "INFO"
             return @{
@@ -155,7 +177,9 @@ function Test-VersionMatch {
     $installed = $InstalledVersion.Trim()
     $target = $TargetVersion.Trim()
 
-    # 完全一致
+    # [B-08] 完全一致判定
+    #   T: $true を返して終了
+    #   F: パーツ単位比較へ続行
     if ($installed -eq $target) {
         return $true
     }
@@ -167,12 +191,19 @@ function Test-VersionMatch {
     # 最小の長さで比較
     $minLength = [Math]::Min($installedParts.Length, $targetParts.Length)
 
+    # [B-09] パーツ単位比較ループ
     for ($i = 0; $i -lt $minLength; $i++) {
+        # [B-10] パーツ一致判定
+        #   T: 次のパーツへ続行
+        #   F: $false を返して終了（バージョン不一致）
         if ($installedParts[$i] -ne $targetParts[$i]) {
             return $false
         }
     }
 
+    # [B-11] ループ終了（すべてのパーツが一致）
+    #   短い方のパーツがすべて一致した場合、バージョン一致とみなす
+    #   例: "1.2.3.4" と "1.2.3" → 一致
     return $true
 }
 
