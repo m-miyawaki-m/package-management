@@ -334,23 +334,29 @@ Main.ps1
 ```
 configCopy設定あり
     │
-    ├─ 設定ファイルを共有から指定先にコピー
-    │   例: \\server\share\packages\sqldeveloper\connections.xml
-    │     → %APPDATA%\SQL Developer\connections.xml
+    ├─ コピー先フォルダ確認
+    │       └─ 存在しない → 自動作成
     │
-    └─ コピー先に既存ファイルがある場合
-        └─ bk/yyyyMMdd-HHmmss/ にバックアップ後、上書き
+    ├─ コピー先に既存ファイルがある場合
+    │       └─ backupRoot/yyyyMMdd-HHmmss/ にバックアップ
+    │
+    └─ 設定ファイルを共有から指定先にコピー
+        例: \\server\share\packages\sqldeveloper\connections.xml
+          → %APPDATA%\SQL Developer\connections.xml
 ```
+
+※環境変数（%APPDATA%等）は `[Environment]::ExpandEnvironmentVariables()` で展開
 
 ## バックアップ仕様
 
 | 対象 | 条件 | 動作 |
 |------|------|------|
-| 取得した圧縮ファイル | ハッシュ不一致で再取得時 | bk/yyyyMMdd-HHmmss/に移動 |
-| 解凍先ディレクトリ | 既存ディレクトリが存在 | 7z圧縮してbk/yyyyMMdd-HHmmss/に移動後、新規解凍 |
-| コピー先ファイル | 既存ファイルが存在（copyタイプ） | bk/yyyyMMdd-HHmmss/に移動後、上書き |
+| 取得した圧縮ファイル | ハッシュ不一致で再取得時 | backupRoot/yyyyMMdd-HHmmss/に移動 |
+| 解凍先ディレクトリ | 既存ディレクトリが存在 | 7z圧縮してbackupRoot/yyyyMMdd-HHmmss/に移動後、新規解凍 |
+| コピー先ファイル（copyタイプ） | 既存ファイルが存在 | backupRoot/yyyyMMdd-HHmmss/に移動後、上書き |
+| 設定ファイル（configCopy） | 既存ファイルが存在 | backupRoot/yyyyMMdd-HHmmss/に移動後、上書き |
 
-バックアップ先例: `C:\packages\bk\20260203-103000\`
+バックアップ先例: `C:\packages\bk\20260203-103000\`（backupRoot = `C:\packages\bk`）
 
 **注意**: バックアップフォルダは実行ごとにタイムスタンプ付きで新規作成
 
@@ -497,7 +503,7 @@ configCopy設定あり
 | eclipse        | extract    | 2024-03        | 2024-06        | SUCCESS  | 旧版をbkに退避   |
 | weblogic       | extract    | -              | 14.1.1         | SUCCESS  |                  |
 | teraterm       | installer  | 5.0            | 5.1            | SUCCESS  |                  |
-| git            | installer  | 2.43.0         | 2.43.0         | SKIPPED  | ハッシュ一致     |
+| git            | installer  | 2.43.0         | 2.43.0         | SKIPPED  | バージョン一致   |
 | tortoisegit    | installer  | -              | 2.15.0         | SUCCESS  |                  |
 | chrome         | installer  | 120.0          | 121.0          | FAILED   | exit code: 1603  |
 | modheader      | copy       | -              | -              | SUCCESS  |                  |
