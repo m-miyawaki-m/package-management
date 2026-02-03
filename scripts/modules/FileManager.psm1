@@ -52,13 +52,15 @@ function Get-FileHashSHA256 {
             $totalRead += $read
 
             # 進行度表示（5秒経過 かつ 5%以上変化）
-            $currentPercent = [math]::Round(($totalRead / $fileSize) * 100)
-            $elapsed = (Get-Date) - $script:LastProgressTime
+            if ($fileSize -gt 0) {
+                $currentPercent = [math]::Round(($totalRead / $fileSize) * 100)
+                $elapsed = (Get-Date) - $script:LastProgressTime
 
-            if ($elapsed.TotalSeconds -ge 5 -and ($currentPercent - $script:LastProgressPercent) -ge 5) {
-                Write-LogProgress -Operation $OperationName -CurrentBytes $totalRead -TotalBytes $fileSize
-                $script:LastProgressTime = Get-Date
-                $script:LastProgressPercent = $currentPercent
+                if ($elapsed.TotalSeconds -ge 5 -and ($currentPercent - $script:LastProgressPercent) -ge 5) {
+                    Write-LogProgress -Operation $OperationName -CurrentBytes $totalRead -TotalBytes $fileSize
+                    $script:LastProgressTime = Get-Date
+                    $script:LastProgressPercent = $currentPercent
+                }
             }
         }
 
@@ -102,6 +104,12 @@ function Copy-FileWithProgress {
         [string]$OperationName = "ファイル取得中"
     )
 
+    # ソースファイル存在確認
+    if (-not (Test-Path $Source)) {
+        Write-Log -Message "ソースファイルが存在しません: $Source" -Level "ERROR"
+        return $false
+    }
+
     $sourceInfo = Get-Item $Source
     $fileSize = $sourceInfo.Length
 
@@ -128,18 +136,22 @@ function Copy-FileWithProgress {
             $totalRead += $read
 
             # 進行度表示（5秒経過 かつ 5%以上変化）
-            $currentPercent = [math]::Round(($totalRead / $fileSize) * 100)
-            $elapsed = (Get-Date) - $script:LastProgressTime
+            if ($fileSize -gt 0) {
+                $currentPercent = [math]::Round(($totalRead / $fileSize) * 100)
+                $elapsed = (Get-Date) - $script:LastProgressTime
 
-            if ($elapsed.TotalSeconds -ge 5 -and ($currentPercent - $script:LastProgressPercent) -ge 5) {
-                Write-LogProgress -Operation $OperationName -CurrentBytes $totalRead -TotalBytes $fileSize
-                $script:LastProgressTime = Get-Date
-                $script:LastProgressPercent = $currentPercent
+                if ($elapsed.TotalSeconds -ge 5 -and ($currentPercent - $script:LastProgressPercent) -ge 5) {
+                    Write-LogProgress -Operation $OperationName -CurrentBytes $totalRead -TotalBytes $fileSize
+                    $script:LastProgressTime = Get-Date
+                    $script:LastProgressPercent = $currentPercent
+                }
             }
         }
 
         # 100%表示
-        Write-LogProgress -Operation $OperationName -CurrentBytes $fileSize -TotalBytes $fileSize
+        if ($fileSize -gt 0) {
+            Write-LogProgress -Operation $OperationName -CurrentBytes $fileSize -TotalBytes $fileSize
+        }
 
         return $true
     }
@@ -193,10 +205,15 @@ function Backup-File {
     $fileName = [System.IO.Path]::GetFileName($FilePath)
     $backupPath = Join-Path $backupDir $fileName
 
-    Move-Item -Path $FilePath -Destination $backupPath -Force
-    Write-Log -Message "バックアップ: $FilePath → $backupPath" -Level "INFO"
-
-    return $true
+    try {
+        Move-Item -Path $FilePath -Destination $backupPath -Force
+        Write-Log -Message "バックアップ: $FilePath → $backupPath" -Level "INFO"
+        return $true
+    }
+    catch {
+        Write-Log -Message "バックアップエラー: $_" -Level "ERROR"
+        return $false
+    }
 }
 
 function Get-SingleFileFromFolder {
