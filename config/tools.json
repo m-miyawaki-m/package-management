@@ -1,85 +1,135 @@
 {
   "defaults": {
-    "sourceBase": "\\\\server\\share\\packages",
-    "destBase": "C:\\dev-tools",
-    "7zPath": "C:\\dev-tools\\7zip\\7z.exe"
+    "sourceRoot": "\\\\server\\share\\packages",
+    "localRoot": "C:\\packages",
+    "destRoot": "C:\\dev-tools",
+    "backupRoot": "C:\\packages\\bk",
+    "logRoot": "C:\\dev-tools\\logs",
+    "7zPath": "C:\\dev-tools\\7zip\\7z.exe",
+    "successCodes": [0, 3010]
   },
   "tools": [
     {
       "name": "7zip",
+      "type": "installer",
+      "source": "7zip",
       "version": "23.01",
-      "steps": [
-        {
-          "type": "installer",
-          "source": "7zip\\7z2301-x64.exe",
-          "silentArgs": "/S /D=C:\\dev-tools\\7zip"
-        }
-      ]
+      "displayName": "7-Zip",
+      "silentArgs": "/S /D=C:\\dev-tools\\7zip",
+      "required": true
+    },
+    {
+      "name": "teraterm",
+      "type": "installer",
+      "source": "teraterm",
+      "version": "5.2",
+      "displayName": "Tera Term",
+      "silentArgs": "/VERYSILENT /NORESTART"
+    },
+    {
+      "name": "git",
+      "type": "installer",
+      "source": "git",
+      "version": "2.43.0",
+      "displayName": "Git",
+      "silentArgs": "/VERYSILENT /NORESTART"
+    },
+    {
+      "name": "tortoisegit",
+      "type": "installer",
+      "source": "tortoisegit",
+      "version": "2.15.0",
+      "displayName": "TortoiseGit",
+      "silentArgs": "/S"
+    },
+    {
+      "name": "tortoisegit-plugin",
+      "type": "installer",
+      "source": "tortoisegit-plugin",
+      "silentArgs": "/S",
+      "skipVersionCheck": true
+    },
+    {
+      "name": "chrome",
+      "type": "installer",
+      "source": "chrome",
+      "version": "121.0",
+      "displayName": "Google Chrome",
+      "silentArgs": "/silent /install"
+    },
+    {
+      "name": "winmerge",
+      "type": "installer",
+      "source": "winmerge",
+      "version": "2.16.40",
+      "displayName": "WinMerge",
+      "silentArgs": "/VERYSILENT /NORESTART"
+    },
+    {
+      "name": "sakura",
+      "type": "installer",
+      "source": "sakura",
+      "version": "2.4.2",
+      "displayName": "サクラエディタ",
+      "silentArgs": "/VERYSILENT"
     },
     {
       "name": "jdk",
-      "version": "17.0.8",
-      "steps": [
-        {
-          "type": "extract",
-          "source": "jdk\\jdk-17.0.8.7z",
-          "destination": "jdk\\17.0.8"
-        },
-        {
-          "type": "env",
-          "name": "JAVA_HOME",
-          "value": "C:\\dev-tools\\jdk\\17.0.8"
-        },
-        {
-          "type": "env",
-          "name": "PATH",
-          "action": "append",
-          "value": "%JAVA_HOME%\\bin"
-        },
-        {
-          "type": "cert",
-          "source": "certs\\internal-ca.cer",
-          "javaHome": "C:\\dev-tools\\jdk\\17.0.8"
-        }
-      ]
-    },
-    {
-      "name": "gradle",
-      "version": "8.5",
-      "steps": [
-        {
-          "type": "extract",
-          "source": "gradle\\gradle-8.5.7z",
-          "destination": "gradle\\8.5"
-        },
-        {
-          "type": "env",
-          "name": "GRADLE_HOME",
-          "value": "C:\\dev-tools\\gradle\\8.5"
-        },
-        {
-          "type": "env",
-          "name": "PATH",
-          "action": "append",
-          "value": "%GRADLE_HOME%\\bin"
-        }
-      ]
+      "type": "extract",
+      "source": "jdk",
+      "destination": "C:\\dev-tools\\jdk\\17"
     },
     {
       "name": "eclipse",
-      "version": "2024-03",
-      "steps": [
-        {
-          "type": "extract",
-          "source": "eclipse\\eclipse-2024-03.7z",
-          "destination": "eclipse\\2024-03"
-        },
-        {
-          "type": "config",
-          "source": "eclipse\\eclipse.ini",
-          "destination": "eclipse\\2024-03\\eclipse.ini"
-        }
-      ]
+      "type": "extract",
+      "source": "eclipse",
+      "destination": "C:\\dev-tools\\eclipse"
+    },
+    {
+      "name": "eclipse-workspace",
+      "type": "extract",
+      "source": "eclipse-workspace",
+      "destination": "C:\\workspace\\eclipse"
+    },
+    {
+      "name": "weblogic",
+      "type": "extract",
+      "source": "weblogic",
+      "destination": "C:\\dev-tools\\weblogic"
+    },
+    {
+      "name": "a5m2",
+      "type": "extract",
+      "source": "a5m2",
+      "destination": "C:\\dev-tools\\a5m2"
+    },
+    {
+      "name": "sqldeveloper",
+      "type": "extract",
+      "source": "sqldeveloper",
+      "destination": "C:\\dev-tools\\sqldeveloper",
+      "configCopy": {
+        "source": "connections.xml",
+        "destination": "%APPDATA%\\SQL Developer\\system\\connections.xml"
+      }
+    },
+    {
+      "name": "modheader",
+      "type": "copy",
+      "source": "chrome-plugins",
+      "destination": "C:\\dev-tools\\chrome-plugins\\modheader"
+    }
+  ],
+  "repositories": [
+    {
+      "name": "project-main",
+      "url": "https://github.com/org/project-main.git",
+      "destination": "C:\\workspace\\project-main"
+    },
+    {
+      "name": "project-common",
+      "url": "https://github.com/org/project-common.git",
+      "destination": "C:\\workspace\\project-common"
     }
   ]
 }
