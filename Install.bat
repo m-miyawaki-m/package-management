@@ -65,6 +65,7 @@ powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\Main.ps1" -ConfigP
 if %errorlevel% neq 0 (
     echo.
     echo インストール中にエラーが発生しました。
+    set "token="
     pause
     exit /b 1
 )
@@ -81,6 +82,12 @@ goto end
 echo.
 echo インストールを開始します...
 powershell -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\Main.ps1" -ConfigPath "%CONFIG_PATH%"
+if %errorlevel% neq 0 (
+    echo.
+    echo インストール中にエラーが発生しました。
+    pause
+    exit /b 1
+)
 goto end
 
 :clone_only
