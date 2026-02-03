@@ -45,7 +45,7 @@ $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
 # ツールごとに処理
 foreach ($tool in $config.tools) {
-    Write-LogSection -Title $tool.name
+    Write-LogSection -ToolName $tool.name
 
     $status = "FAILED"
     $note = ""
@@ -123,12 +123,6 @@ foreach ($tool in $config.tools) {
 
                 if ($installResult.Success) {
                     $status = "SUCCESS"
-
-                    # 7zipが失敗した場合は即停止
-                    if ($tool.required -and -not $installResult.Success) {
-                        Write-Log -Message "必須ツールのインストールに失敗しました" -Level "FATAL"
-                        exit 1
-                    }
                 }
                 else {
                     $status = "FAILED"
