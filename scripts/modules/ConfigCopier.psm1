@@ -52,7 +52,13 @@ function Copy-ConfigFile {
     $destDir = Split-Path $expandedDestination -Parent
     if (-not (Test-Path $destDir)) {
         Write-Log -Message "コピー先フォルダを作成: $destDir" -Level "INFO"
-        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        try {
+            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        }
+        catch {
+            Write-Log -Message "フォルダ作成エラー: $_" -Level "ERROR"
+            return $false
+        }
     }
 
     # 既存ファイルがある場合はバックアップ
@@ -61,14 +67,29 @@ function Copy-ConfigFile {
 
         $backupDir = Join-Path $BackupRoot $Timestamp
         if (-not (Test-Path $backupDir)) {
-            New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+            try {
+                New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+            }
+            catch {
+                Write-Log -Message "バックアップフォルダ作成エラー: $_" -Level "ERROR"
+                return $false
+            }
         }
 
+        # ファイル名にパス情報を含めて一意性を確保
+        $parentDir = Split-Path (Split-Path $expandedDestination -Parent) -Leaf
         $fileName = [System.IO.Path]::GetFileName($expandedDestination)
-        $backupPath = Join-Path $backupDir $fileName
+        $backupFileName = "${parentDir}_${fileName}"
+        $backupPath = Join-Path $backupDir $backupFileName
 
-        Move-Item -Path $expandedDestination -Destination $backupPath -Force
-        Write-Log -Message "バックアップ完了: $backupPath" -Level "INFO"
+        try {
+            Move-Item -Path $expandedDestination -Destination $backupPath -Force
+            Write-Log -Message "バックアップ完了: $backupPath" -Level "INFO"
+        }
+        catch {
+            Write-Log -Message "バックアップエラー: $_" -Level "ERROR"
+            return $false
+        }
     }
 
     # コピー実行
