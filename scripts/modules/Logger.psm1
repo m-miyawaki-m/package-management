@@ -5,7 +5,7 @@
 $script:LogFile = $null
 $script:SummaryFile = $null
 $script:StartTime = $null
-$script:Results = @()
+$script:Results = [System.Collections.Generic.List[hashtable]]::new()
 
 function Initialize-Log {
     <#
@@ -32,7 +32,7 @@ function Initialize-Log {
 
     $script:LogFile = Join-Path $LogRoot "install-$timestamp.log"
     $script:SummaryFile = Join-Path $LogRoot "summary-$timestamp.txt"
-    $script:Results = @()
+    $script:Results = [System.Collections.Generic.List[hashtable]]::new()
 
     # ヘッダー出力
     Write-Log "================================================================================" -Level "INFO" -IsSection
@@ -190,14 +190,14 @@ function Add-Result {
         [string]$Note = ""
     )
 
-    $script:Results += @{
+    $script:Results.Add(@{
         ToolName = $ToolName
         Type = $Type
         Status = $Status
         LocalVersion = $LocalVersion
         SharedVersion = $SharedVersion
         Note = $Note
-    }
+    })
 }
 
 function Write-Summary {
@@ -215,9 +215,9 @@ function Write-Summary {
     $endTime = Get-Date
 
     # 集計
-    $successCount = ($script:Results | Where-Object { $_.Status -eq "SUCCESS" }).Count
-    $skippedCount = ($script:Results | Where-Object { $_.Status -eq "SKIPPED" }).Count
-    $failedCount = ($script:Results | Where-Object { $_.Status -eq "FAILED" }).Count
+    $successCount = @($script:Results | Where-Object { $_.Status -eq "SUCCESS" }).Count
+    $skippedCount = @($script:Results | Where-Object { $_.Status -eq "SKIPPED" }).Count
+    $failedCount = @($script:Results | Where-Object { $_.Status -eq "FAILED" }).Count
 
     # サマリー内容を構築
     $summaryLines = @()
