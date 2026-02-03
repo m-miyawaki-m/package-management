@@ -115,7 +115,7 @@ C:\dev-tools\logs\                 # defaults.logRoot
       "destination": "C:\\dev-tools\\sqldeveloper",
       "configCopy": {
         "source": "connections.xml",
-        "destination": "%APPDATA%\\SQL Developer\\connections.xml"
+        "destination": "%APPDATA%\\SQL Developer\\system\\connections.xml"
       }
     },
     {
