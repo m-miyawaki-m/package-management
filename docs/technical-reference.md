@@ -1,5 +1,463 @@
 # 開発環境パッケージインストーラー 技術リファレンス
 
+---
+
+## 言語思想・設計原則
+
+### PowerShell の基本思想
+
+PowerShellは「動詞-名詞」形式のコマンドレット（Cmdlet）を中心に設計されたシェル言語であり、以下の特徴を持つ。
+
+#### オブジェクトパイプライン
+
+テキストベースの従来型シェル（bash, cmd）とは異なり、PowerShellは**オブジェクト**をパイプラインで受け渡す。
+
+```powershell
+# bash: テキスト処理（文字列の解析が必要）
+ls -l | grep "^d" | awk '{print $9}'
+
+# PowerShell: オブジェクト処理（プロパティに直接アクセス）
+Get-ChildItem | Where-Object { $_.PSIsContainer } | Select-Object Name
+```
+
+**利点:**
+- 型安全性：プロパティ名が明確、タイプミスで即エラー
+- 構造化データ：JSONやXMLとの親和性が高い
+- 一貫したAPI：すべてのコマンドレットが同じ方式
+
+#### 動詞-名詞命名規則
+
+```powershell
+Get-Content      # 取得
+Set-Content      # 設定
+New-Item         # 作成
+Remove-Item      # 削除
+Test-Path        # テスト（存在確認）
+Invoke-Command   # 実行
+```
+
+| 動詞 | 意味 | 例 |
+|------|------|-----|
+| `Get` | 取得・読み取り | `Get-Content`, `Get-ChildItem` |
+| `Set` | 設定・書き込み | `Set-Content`, `Set-Location` |
+| `New` | 新規作成 | `New-Item`, `New-Object` |
+| `Remove` | 削除 | `Remove-Item` |
+| `Test` | テスト・確認 | `Test-Path`, `Test-Connection` |
+| `Invoke` | 実行 | `Invoke-Command`, `Invoke-WebRequest` |
+| `Copy` | コピー | `Copy-Item` |
+| `Move` | 移動 | `Move-Item` |
+| `Import/Export` | インポート/エクスポート | `Import-Module`, `Export-Csv` |
+| `ConvertFrom/To` | 変換 | `ConvertFrom-Json`, `ConvertTo-Json` |
+
+#### エラーハンドリング哲学
+
+PowerShellには**終了エラー（Terminating Error）**と**非終了エラー（Non-Terminating Error）**の2種類がある。
+
+```powershell
+# 非終了エラー（デフォルト）: 処理継続
+Get-Item "存在しないパス"  # エラー表示後、次の行へ
+
+# 終了エラーに変換
+$ErrorActionPreference = "Stop"  # スクリプト全体
+Get-Item "存在しないパス" -ErrorAction Stop  # 個別コマンド
+```
+
+本プロジェクトでは `$ErrorActionPreference = "Stop"` を採用し、予期しないエラーで即座に停止させる。
+
+### 本プロジェクトの設計原則
+
+#### 1. モジュール分離（単一責任）
+
+各モジュールは単一の責務を持つ。
+
+| モジュール | 責務 |
+|-----------|------|
+| Logger.psm1 | ログ出力と結果集計 |
+| FileManager.psm1 | ファイル操作（コピー、ハッシュ、バックアップ） |
+| Extractor.psm1 | アーカイブ解凍 |
+| Installer.psm1 | インストーラー実行とレジストリ確認 |
+| ConfigCopier.psm1 | 設定ファイルコピー |
+| FileCopier.psm1 | 汎用ファイル/フォルダコピー |
+
+#### 2. 明示的な戻り値
+
+関数はハッシュテーブルで構造化された結果を返す。
+
+```powershell
+# 良い例: 構造化された戻り値
+return @{
+    Success = $true
+    Skipped = $false
+    Message = "コピー完了"
+}
+
+# 悪い例: ブール値だけでは情報不足
+return $true
+```
+
+#### 3. 防御的プログラミング
+
+入力値は常に検証し、存在確認を行う。
+
+```powershell
+# パターン: 操作前に必ず存在確認
+if (-not (Test-Path $Source)) {
+    Write-Log -Message "ソースが存在しません: $Source" -Level "ERROR"
+    return @{ Success = $false }
+}
+```
+
+#### 4. 冪等性（べきとうせい）
+
+同じ操作を複数回実行しても結果が変わらない設計。
+
+```powershell
+# ハッシュ比較でスキップ判定
+if ($sourceHash -eq $destHash) {
+    return @{ Success = $true; Skipped = $true }  # 再実行しても安全
+}
+```
+
+---
+
+## PowerShell 5.1 固有の考慮事項
+
+本プロジェクトはWindows標準のPowerShell 5.1を対象とする。PowerShell 7.x（Core）との互換性は保証しない。
+
+### 5.1 制限事項と回避策
+
+#### ConvertFrom-Json の戻り値
+
+```powershell
+# PowerShell 7.x: -AsHashtable オプションが使用可能
+$config = Get-Content $path | ConvertFrom-Json -AsHashtable
+
+# PowerShell 5.1: -AsHashtable なし → PSCustomObject が返る
+$config = Get-Content $path | ConvertFrom-Json  # PSCustomObject
+$config.defaults.sourceRoot  # プロパティアクセスは同じ
+```
+
+**PSCustomObjectとHashtableの違い:**
+```powershell
+# PSCustomObject: キーの動的追加が困難
+$obj = [PSCustomObject]@{ Key = "Value" }
+$obj.NewKey = "X"  # 動的追加は可能だが非推奨
+
+# Hashtable: 動的操作が容易
+$hash = @{ Key = "Value" }
+$hash["NewKey"] = "X"  # OK
+$hash.ContainsKey("Key")  # メソッドも使用可能
+```
+
+本プロジェクトではJSONからの読み込みはPSCustomObjectのまま使用し、スクリプト内で新規作成する場合はHashtableを使用する。
+
+#### 配列の挙動
+
+```powershell
+# 要素が1つの場合、配列ではなくスカラーになる
+$items = Get-ChildItem "*.txt"  # 1ファイルしかないとスカラー
+$items.Count  # エラーまたは予期しない動作
+
+# 回避策: @() で明示的に配列化
+$items = @(Get-ChildItem "*.txt")  # 常に配列
+$items.Count  # 0, 1, または複数（安全）
+```
+
+**本プロジェクトでの適用:**
+```powershell
+# Logger.psm1 - 結果集計
+$succeeded = @($script:Results | Where-Object { $_.Status -eq "SUCCESS" })
+$summary.Success = $succeeded.Count  # 0件でも安全
+```
+
+#### パイプライン出力の抑制
+
+```powershell
+# 戻り値を持つコマンドは意図せず出力に混入する
+function Do-Something {
+    New-Item -ItemType Directory -Path $path  # ディレクトリ情報が出力される
+    return $true
+}
+# 呼び出し側で $true 以外のオブジェクトも受け取る
+
+# 回避策1: Out-Null
+New-Item -ItemType Directory -Path $path | Out-Null
+
+# 回避策2: [void] キャスト
+[void](New-Item -ItemType Directory -Path $path)
+
+# 回避策3: $null への代入
+$null = New-Item -ItemType Directory -Path $path
+```
+
+本プロジェクトでは `| Out-Null` を標準とする。
+
+---
+
+## PowerShell 構文詳細
+
+### 変数とスコープ
+
+#### スコープ修飾子
+
+```powershell
+$local:var    # ローカルスコープ（現在のブロック）
+$script:var   # スクリプトスコープ（.ps1ファイル全体）
+$global:var   # グローバルスコープ（セッション全体）
+$private:var  # プライベート（子スコープから不可視）
+```
+
+**モジュール内でのスコープ:**
+```powershell
+# Logger.psm1
+$script:LogFile = $null           # モジュール内で共有
+$script:Results = [System.Collections.Generic.List[hashtable]]::new()
+
+function Initialize-Log {
+    $script:LogFile = "path/to/log"  # $script: が必要
+}
+```
+
+#### 自動変数
+
+| 変数 | 内容 |
+|------|------|
+| `$_` / `$PSItem` | パイプラインの現在のオブジェクト |
+| `$?` | 直前のコマンドの成功/失敗（$true/$false） |
+| `$LASTEXITCODE` | 直前の外部コマンドの終了コード |
+| `$PSScriptRoot` | 実行中スクリプトのディレクトリ |
+| `$PSCommandPath` | 実行中スクリプトのフルパス |
+| `$args` | 関数に渡された未バインド引数 |
+| `$null` | null値 |
+| `$true` / `$false` | ブール値 |
+
+### 演算子
+
+#### 比較演算子
+
+```powershell
+-eq    # 等しい (equal)
+-ne    # 等しくない (not equal)
+-gt    # より大きい (greater than)
+-ge    # 以上 (greater or equal)
+-lt    # より小さい (less than)
+-le    # 以下 (less or equal)
+-like  # ワイルドカードマッチ
+-match # 正規表現マッチ
+```
+
+```powershell
+# 大文字小文字を区別する場合は 'c' プレフィックス
+"ABC" -ceq "abc"  # $false
+"ABC" -eq "abc"   # $true（デフォルトは case-insensitive）
+```
+
+#### 論理演算子
+
+```powershell
+-and   # AND
+-or    # OR
+-not   # NOT（! も可）
+-xor   # XOR
+```
+
+```powershell
+if (-not (Test-Path $path) -and $required) {
+    Write-Error "必須ファイルがありません"
+}
+```
+
+#### 文字列演算子
+
+```powershell
+-replace  # 正規表現置換
+-split    # 分割
+-join     # 結合
+-contains # 配列に要素が含まれるか
+-in       # 要素が配列に含まれるか
+```
+
+```powershell
+# -replace: 正規表現（エスケープに注意）
+"file.txt" -replace '\.txt$', '.bak'  # file.bak
+
+# -split / -join
+"a,b,c" -split ","      # @("a", "b", "c")
+@("a", "b", "c") -join ","  # "a,b,c"
+
+# -contains vs -in（順序が逆）
+@(1, 2, 3) -contains 2  # $true
+2 -in @(1, 2, 3)        # $true
+```
+
+### パラメータ定義
+
+#### 高度な関数
+
+```powershell
+function Invoke-SilentInstall {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$InstallerPath,
+
+        [Parameter(Mandatory)]
+        [string]$SilentArgs,
+
+        [Parameter()]
+        [int[]]$SuccessCodes = @(0)
+    )
+
+    # 関数本体
+}
+```
+
+| 属性 | 説明 |
+|------|------|
+| `[CmdletBinding()]` | 高度な関数機能を有効化 |
+| `[Parameter(Mandatory)]` | 必須パラメータ |
+| `[Parameter(Mandatory=$false)]` | 任意パラメータ（省略時デフォルト） |
+| `[ValidateSet("A","B","C")]` | 許可値を制限 |
+| `[ValidateRange(1,100)]` | 数値範囲を制限 |
+| `[ValidateNotNullOrEmpty()]` | null/空文字を禁止 |
+
+#### スプラッティング
+
+多数のパラメータを渡す際に可読性を向上させる技法。
+
+```powershell
+# 通常の呼び出し（長い）
+Copy-Item -Path $source -Destination $dest -Force -Recurse
+
+# スプラッティング（ハッシュテーブル）
+$params = @{
+    Path = $source
+    Destination = $dest
+    Force = $true
+    Recurse = $true
+}
+Copy-Item @params  # @ で展開
+```
+
+### エラーハンドリング
+
+#### try-catch-finally
+
+```powershell
+try {
+    $result = Invoke-RiskyOperation
+}
+catch [System.IO.FileNotFoundException] {
+    # 特定の例外をキャッチ
+    Write-Log "ファイルが見つかりません: $($_.Exception.Message)"
+}
+catch {
+    # すべての例外をキャッチ
+    Write-Log "予期しないエラー: $_"
+}
+finally {
+    # 常に実行（クリーンアップ処理）
+    if ($resource) { $resource.Dispose() }
+}
+```
+
+#### $ErrorActionPreference
+
+```powershell
+$ErrorActionPreference = "Stop"           # スクリプト全体に適用
+Get-Item "path" -ErrorAction SilentlyContinue  # 個別コマンドで上書き
+```
+
+| 値 | 動作 |
+|----|------|
+| `Stop` | 終了エラーとして停止 |
+| `Continue` | エラー表示後、継続（デフォルト） |
+| `SilentlyContinue` | エラーを無視して継続 |
+| `Inquire` | ユーザーに確認 |
+
+### .NET統合
+
+PowerShellは.NET Frameworkと密接に統合されており、.NETクラスを直接使用できる。
+
+#### 静的メソッド呼び出し
+
+```powershell
+[System.IO.Path]::GetFileName("C:\path\file.txt")  # file.txt
+[System.IO.Path]::Combine("C:\base", "sub", "file.txt")  # C:\base\sub\file.txt
+[Environment]::ExpandEnvironmentVariables("%APPDATA%\config")  # C:\Users\...\AppData\Roaming\config
+[System.IO.File]::Exists($path)  # Test-Path の代替
+```
+
+#### オブジェクトのインスタンス化
+
+```powershell
+# new() 静的メソッド（推奨）
+$list = [System.Collections.Generic.List[string]]::new()
+$list.Add("item")
+
+# New-Object コマンドレット
+$list = New-Object System.Collections.Generic.List[string]
+
+# コンストラクタ呼び出し
+$encoding = [System.Text.Encoding]::UTF8
+```
+
+#### 本プロジェクトでの.NET使用例
+
+```powershell
+# Logger.psm1 - 高速なリスト操作
+$script:Results = [System.Collections.Generic.List[hashtable]]::new()
+$script:Results.Add(@{ ToolName = "git"; Status = "SUCCESS" })
+
+# ConfigCopier.psm1 - 環境変数展開
+$expandedPath = [Environment]::ExpandEnvironmentVariables($DestinationPath)
+
+# Clone-Repositories.ps1 - SecureString処理
+$ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($AccessToken)
+$plainText = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
+[System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+```
+
+### モジュール構造
+
+#### .psm1 ファイル構成
+
+```powershell
+# scripts/modules/Example.psm1
+
+# スクリプトスコープ変数
+$script:InternalState = $null
+
+# プライベート関数（エクスポートしない）
+function Get-InternalValue {
+    return $script:InternalState
+}
+
+# パブリック関数
+function Initialize-Example {
+    param([string]$Value)
+    $script:InternalState = $Value
+}
+
+function Get-Example {
+    return Get-InternalValue
+}
+
+# エクスポート（明示的に公開する関数を指定）
+Export-ModuleMember -Function Initialize-Example, Get-Example
+```
+
+#### モジュールのインポート
+
+```powershell
+# 相対パスでのインポート
+Import-Module (Join-Path $PSScriptRoot "modules\Logger.psm1") -Force
+
+# -Force: 既にインポート済みでも再読み込み（開発時に有用）
+```
+
+---
+
 ## tools.json 構造
 
 ### 全体構造
