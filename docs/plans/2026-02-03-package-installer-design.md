@@ -26,25 +26,30 @@
 
 ## ディレクトリ構成
 
+### スクリプト配置
 ```
 package-management/
-├── Install.bat                    # エントリポイント（権限確認）
+├── Install.bat                    # エントリポイント（権限確認・メニュー表示）
 ├── config/
 │   └── tools.json                 # ツール定義・設定ファイル
-├── scripts/
-│   ├── Main.ps1                   # 統括スクリプト
-│   ├── Clone-Repositories.ps1    # Gitクローン（単独実行可）
-│   ├── Set-JavaEnv.ps1           # JDK環境変数設定（単独実行可）
-│   └── modules/
-│       ├── Logger.psm1            # ログ出力
-│       ├── FileManager.psm1       # ファイル取得・ハッシュ比較・バックアップ
-│       ├── Extractor.psm1         # 解凍処理
-│       ├── Installer.psm1         # exe/msi実行
-│       ├── ConfigImporter.psm1    # DB接続インポート
-│       └── FileCopier.psm1        # ファイルコピー
-└── logs/
-    ├── install-yyyyMMdd-HHmmss.log    # 詳細ログ
-    └── summary-yyyyMMdd-HHmmss.txt    # サマリーテーブル
+└── scripts/
+    ├── Main.ps1                   # 統括スクリプト
+    ├── Clone-Repositories.ps1    # Gitクローン（単独実行可）
+    ├── Set-JavaEnv.ps1           # JDK環境変数設定（単独実行可）
+    └── modules/
+        ├── Logger.psm1            # ログ出力・進行度表示
+        ├── FileManager.psm1       # ファイル取得・ハッシュ比較・バックアップ
+        ├── Extractor.psm1         # 解凍処理
+        ├── Installer.psm1         # exe/msi実行・レジストリ確認
+        ├── ConfigImporter.psm1    # DB接続インポート
+        └── FileCopier.psm1        # ファイルコピー
+```
+
+### ログ出力先（logRootで指定）
+```
+C:\dev-tools\logs\                 # defaults.logRoot
+├── install-yyyyMMdd-HHmmss.log    # 詳細ログ
+└── summary-yyyyMMdd-HHmmss.txt    # サマリーテーブル
 ```
 
 ## 設定ファイル仕様（tools.json）
@@ -56,6 +61,7 @@ package-management/
     "localRoot": "C:\\packages",
     "destRoot": "C:\\dev-tools",
     "backupRoot": "C:\\packages\\bk",
+    "logRoot": "C:\\dev-tools\\logs",
     "7zPath": "C:\\dev-tools\\7zip\\7z.exe",
     "successCodes": [0, 3010]
   },
@@ -64,8 +70,25 @@ package-management/
       "name": "7zip",
       "type": "installer",
       "source": "7zip",
+      "version": "23.01",
+      "displayName": "7-Zip",
       "silentArgs": "/S /D=C:\\dev-tools\\7zip",
       "required": true
+    },
+    {
+      "name": "git",
+      "type": "installer",
+      "source": "git",
+      "version": "2.43.0",
+      "displayName": "Git",
+      "silentArgs": "/VERYSILENT /NORESTART"
+    },
+    {
+      "name": "tortoisegit-plugin",
+      "type": "installer",
+      "source": "tortoisegit-plugin",
+      "silentArgs": "/S",
+      "skipVersionCheck": true
     },
     {
       "name": "jdk",
@@ -127,6 +150,7 @@ package-management/
 | localRoot | ローカルにダウンロードしたファイルの保存先ルート |
 | destRoot | インストール先（解凍先）のデフォルトルート |
 | backupRoot | バックアップ保存先のルート |
+| logRoot | ログファイル出力先のルート |
 | 7zPath | 7-Zip実行ファイルのパス |
 | successCodes | インストーラー成功とみなす終了コードのリスト（デフォルト: [0, 3010]） |
 
@@ -137,8 +161,11 @@ package-management/
 | type | ○ | インストール方式: `installer` / `extract` / `copy` |
 | source | ○ | 共有ルートからの相対パス（フォルダ名） |
 | destination | △ | インストール先（extractとcopyは必須） |
+| version | △ | バージョン（installerタイプで必須、レジストリ比較用） |
+| displayName | △ | レジストリ表示名（installerタイプで必須、アンインストール情報検索用） |
 | silentArgs | - | インストーラーのサイレント引数 |
 | required | - | true: 失敗時に即停止（7zip用） |
+| skipVersionCheck | - | true: バージョン確認をスキップ（プラグイン用） |
 | successCodes | - | 成功とみなす終了コードのリスト（defaultsを上書き） |
 | dbImport | - | DB接続インポート設定 |
 | dbImport.command | - | 実行コマンド |
@@ -247,7 +274,14 @@ Main.ps1
            ├─ サマリー出力
            └─ 終了コード返却
 
-[オプション] Clone-Repositories.ps1（単独実行可、Git成功後のみ）
+[オプション] Clone-Repositories.ps1（単独実行可）
+           │
+           ├─ git --version でGitインストール確認
+           │       └─ 失敗 → FATAL出力して即停止
+           │
+           ├─ tools.json の repositories を読み込み
+           └─ 各リポジトリをクローン（トークン使用）
+
 [オプション] Set-JavaEnv.ps1（単独実行可）
 ```
 
@@ -268,7 +302,7 @@ Main.ps1
     │               │
     │               └─ 比較
     │                       ├─ 一致 → スキップ判定へ
-    │                       └─ 不一致 → 既存をbk/yyyymmdd/に移動 → 取得
+    │                       └─ 不一致 → 既存をbk/yyyyMMdd-HHmmss/に移動 → 取得
     │
     └─ ファイル取得完了
 ```
@@ -282,9 +316,38 @@ Main.ps1
     │
     └─ 存在する
             │
-            ├─ 既存ディレクトリを圧縮
-            ├─ bk/yyyymmdd/ に移動
+            ├─ 既存ディレクトリを圧縮（ツール名-タイムスタンプ.7z）
+            ├─ bk/yyyyMMdd-HHmmss/ に移動
             └─ 解凍実行
+```
+
+### copyタイプ処理フロー
+
+```
+コピー先確認
+    │
+    ├─ 存在しない → コピー実行
+    │
+    └─ 存在する
+            │
+            ├─ ハッシュ比較
+            │       ├─ 一致 → SKIPPED
+            │       └─ 不一致 → 既存をbk/yyyyMMdd-HHmmss/に移動 → コピー
+            │
+            └─ コピー対象は自動判定（ファイル/フォルダ）
+```
+
+### dbImport処理フロー
+
+```
+dbImport設定あり
+    │
+    ├─ インポートファイルを共有からlocalRootにコピー
+    │   例: \\server\share\packages\a5m2\db-list.a5m2
+    │     → C:\packages\a5m2\db-list.a5m2
+    │
+    └─ インポートコマンド実行
+        例: C:\dev-tools\a5m2\A5M2.exe /import C:\packages\a5m2\db-list.a5m2
 ```
 
 ## バックアップ仕様
@@ -308,6 +371,16 @@ Main.ps1
 | フォルダ内複数ファイル検出 | 該当ツールをFAILEDとしてスキップ、次へ継続 |
 | その他 | ログにERROR記録、次のツールへ継続 |
 
+### installerタイプのスキップ判定
+
+レジストリのアンインストール情報からバージョン確認:
+1. `displayName`でアンインストール情報を検索（`HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*`）
+2. インストール済みバージョンを取得
+3. tools.jsonの`version`と比較
+   - 一致 → SKIPPED
+   - 不一致/未インストール → インストール実行
+4. `skipVersionCheck: true`の場合 → バージョン確認なし、常に実行（プラグイン用）
+
 ### インストーラー成功判定
 
 終了コードによる成功判定:
@@ -324,40 +397,45 @@ Main.ps1
 
 | モジュール | 責務 |
 |------------|------|
-| **Logger.psm1** | ログ初期化、色付きコンソール出力、ファイル出力、サマリー生成 |
-| **FileManager.psm1** | ハッシュ計算（SHA256）、ファイル比較、取得、バックアップ（ファイル移動） |
+| **Logger.psm1** | ログ初期化、色付きコンソール出力、ファイル出力、サマリー生成、進行度表示 |
+| **FileManager.psm1** | ハッシュ計算（SHA256）、ファイル比較、取得（進行度付き）、バックアップ（ファイル移動） |
 | **Extractor.psm1** | 7z/zip解凍、解凍先バックアップ（圧縮→移動） |
-| **Installer.psm1** | exe/msiサイレント実行、終了コード確認 |
-| **ConfigImporter.psm1** | DB接続インポートコマンド実行 |
-| **FileCopier.psm1** | ファイル/フォルダコピー |
+| **Installer.psm1** | exe/msiサイレント実行、終了コード確認、レジストリバージョン確認 |
+| **ConfigImporter.psm1** | DB接続インポートコマンド実行、インポートファイルのコピー |
+| **FileCopier.psm1** | ファイル/フォルダコピー（自動判定）、ハッシュ比較 |
 
 ## 進行度表示
 
 大容量ファイルの処理時に進行度をログ形式で出力する。
 
-### 対象処理
-- ハッシュ計算（共有/ローカル）
-- ファイル取得（共有→ローカル）
-- 解凍処理
+### 対象処理と表示形式
 
-### 出力形式
+| 処理 | 進行度 | 出力形式 |
+|------|--------|----------|
+| ハッシュ計算 | あり | `ハッシュ計算中... 52MB / 520MB (10%)` |
+| ファイル取得 | あり | `ファイル取得中... 52MB / 520MB (10%)` |
+| 解凍処理 | なし | `解凍中... (520MB)` → `解凍完了` |
+
+### 進行度あり処理の出力例
 ```
 [INFO]  ファイル取得中... 52MB / 520MB (10%)
 [INFO]  ファイル取得中... 156MB / 520MB (30%)
 [INFO]  ファイル取得中... 312MB / 520MB (60%)
+[INFO]  ファイル取得中... 520MB / 520MB (100%)
+[INFO]  ファイル取得完了
 ```
 
-### 更新条件
+### 進行度なし処理（解凍）の出力例
+```
+[INFO]  解凍中... (520MB)
+[INFO]  解凍完了
+```
+
+### 更新条件（進行度あり処理）
 - **時間**: 5秒ごと
 - **変化量**: 前回出力から5%以上変化した場合のみ
 
 ※両方の条件を満たした場合に出力（5秒経過しても5%未満の変化なら出力しない）
-
-### 処理完了時
-```
-[INFO]  ファイル取得中... 520MB / 520MB (100%)
-[INFO]  ファイル取得完了
-```
 
 ## ログ仕様
 
@@ -366,8 +444,10 @@ Main.ps1
 | 出力先 | 内容 |
 |--------|------|
 | コンソール | 全ログ + サマリーテーブル（色付き） |
-| logs/install-yyyyMMdd-HHmmss.log | 詳細ログ（処理経過） |
-| logs/summary-yyyyMMdd-HHmmss.txt | サマリーテーブルのみ |
+| {logRoot}/install-yyyyMMdd-HHmmss.log | 詳細ログ（処理経過） |
+| {logRoot}/summary-yyyyMMdd-HHmmss.txt | サマリーテーブルのみ |
+
+※logRootはdefaultsで指定（例: `C:\dev-tools\logs`）
 
 ### ログレベル・色分け
 
