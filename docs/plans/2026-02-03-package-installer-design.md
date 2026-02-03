@@ -56,7 +56,8 @@ package-management/
     "localRoot": "C:\\packages",
     "destRoot": "C:\\dev-tools",
     "backupRoot": "C:\\packages\\bk",
-    "7zPath": "C:\\dev-tools\\7zip\\7z.exe"
+    "7zPath": "C:\\dev-tools\\7zip\\7z.exe",
+    "successCodes": [0, 3010]
   },
   "tools": [
     {
@@ -85,7 +86,8 @@ package-management/
       "destination": "C:\\dev-tools\\a5m2",
       "dbImport": {
         "command": "A5M2.exe",
-        "args": "/import db-list.a5m2"
+        "args": "/import",
+        "importFile": "db-list.a5m2"
       }
     },
     {
@@ -95,7 +97,8 @@ package-management/
       "destination": "C:\\dev-tools\\sqldeveloper",
       "dbImport": {
         "command": "sqldeveloper.exe",
-        "args": "/import connections.xml"
+        "args": "/import",
+        "importFile": "connections.xml"
       }
     },
     {
@@ -125,6 +128,7 @@ package-management/
 | destRoot | インストール先（解凍先）のデフォルトルート |
 | backupRoot | バックアップ保存先のルート |
 | 7zPath | 7-Zip実行ファイルのパス |
+| successCodes | インストーラー成功とみなす終了コードのリスト（デフォルト: [0, 3010]） |
 
 #### tools配列
 | キー | 必須 | 説明 |
@@ -135,7 +139,11 @@ package-management/
 | destination | △ | インストール先（extractとcopyは必須） |
 | silentArgs | - | インストーラーのサイレント引数 |
 | required | - | true: 失敗時に即停止（7zip用） |
+| successCodes | - | 成功とみなす終了コードのリスト（defaultsを上書き） |
 | dbImport | - | DB接続インポート設定 |
+| dbImport.command | - | 実行コマンド |
+| dbImport.args | - | コマンド引数 |
+| dbImport.importFile | - | インポートファイル名（共有フォルダ内） |
 
 #### repositories配列
 | キー | 説明 |
@@ -146,7 +154,11 @@ package-management/
 
 ## 共有ディレクトリ構成
 
-ツールごとにフラットなフォルダ構成。各フォルダに1ファイルを想定。
+ツールごとにフラットなフォルダ構成。
+
+- 基本: 1フォルダに1ファイル（アーカイブまたはインストーラー）
+- dbImportがある場合: 本体 + インポートファイルの2ファイル
+- **複数ファイル検出時**: 該当ツールをFAILEDとしてスキップ（dbImportファイル除く）
 
 ```
 \\server\share\packages\
@@ -158,6 +170,12 @@ package-management/
 │   └── eclipse-configured.7z
 ├── git\
 │   └── Git-2.43.0-64-bit.exe
+├── a5m2\
+│   ├── a5m2-2.17.7z              # アプリ本体
+│   └── db-list.a5m2              # DB接続リスト（dbImport用）
+├── sqldeveloper\
+│   ├── sqldeveloper-23.1.7z      # アプリ本体
+│   └── connections.xml           # DB接続リスト（dbImport用）
 └── ...
 ```
 
@@ -170,13 +188,30 @@ Install.bat
     │
     ├─ 1. 管理者権限チェック（なければ昇格要求）
     ├─ 2. PowerShell実行ポリシー確認
-    └─ 3. Main.ps1 呼び出し
+    ├─ 3. メニュー表示
+    │       ========================================
+    │         開発環境セットアップ
+    │       ========================================
+    │       1. インストール + Gitクローン自動実行
+    │       2. インストールのみ
+    │       3. Gitクローンのみ
+    │       ----------------------------------------
+    │       選択してください (1-3):
+    │
+    └─ 4. 選択に応じてスクリプト呼び出し
+           ├─ 1 → Main.ps1 実行後、Clone-Repositories.ps1 実行
+           ├─ 2 → Main.ps1 のみ実行
+           └─ 3 → Clone-Repositories.ps1 のみ実行
+
+Main.ps1
            │
            ├─ モジュール読み込み
            ├─ tools.json 読み込み
            ├─ ログ初期化
+           ├─ 共有ディレクトリアクセスチェック
+           │       └─ アクセス不可 → FATAL出力して即停止
            │
-           └─ ツールごとにループ
+           └─ ツールごとにループ（tools配列順に処理）
                   │
                   ├─ [FileManager] 共有からファイル情報取得
                   ├─ [FileManager] ローカルファイルとハッシュ比較
@@ -239,17 +274,34 @@ Install.bat
 
 | 対象 | 条件 | 動作 |
 |------|------|------|
-| 取得した圧縮ファイル | ハッシュ不一致で再取得時 | bk/yyyymmdd/に移動 |
-| 解凍先ディレクトリ | 既存ディレクトリが存在 | 7z圧縮してbk/yyyymmdd/に移動後、新規解凍 |
+| 取得した圧縮ファイル | ハッシュ不一致で再取得時 | bk/yyyyMMdd-HHmmss/に移動 |
+| 解凍先ディレクトリ | 既存ディレクトリが存在 | 7z圧縮してbk/yyyyMMdd-HHmmss/に移動後、新規解凍 |
+| コピー先ファイル | 既存ファイルが存在（copyタイプ） | bk/yyyyMMdd-HHmmss/に移動後、上書き |
 
-バックアップ先例: `C:\packages\bk\20260203\`
+バックアップ先例: `C:\packages\bk\20260203-103000\`
+
+**注意**: バックアップフォルダは実行ごとにタイムスタンプ付きで新規作成
 
 ## エラーハンドリング
 
 | ツール | 失敗時の動作 |
 |--------|--------------|
+| 共有ディレクトリアクセス不可 | 即停止（FATAL）- 処理開始前にチェック |
 | 7zip | 即停止（FATAL）- 他ツールの解凍ができないため |
+| フォルダ内複数ファイル検出 | 該当ツールをFAILEDとしてスキップ、次へ継続 |
 | その他 | ログにERROR記録、次のツールへ継続 |
+
+### インストーラー成功判定
+
+終了コードによる成功判定:
+- デフォルト: `0`（成功）、`3010`（再起動要求=成功扱い）
+- ツールごとに`successCodes`で上書き可能
+
+### 特殊ケース: ハッシュ一致だが解凍先なし
+
+ローカルのアーカイブと共有のハッシュが一致しているが、解凍先ディレクトリが存在しない場合（手動削除等）:
+- WARNING出力: `"jdk: ハッシュ一致だが解凍先が存在しません。再解凍します。"`
+- 再解凍を実行
 
 ## モジュール責務
 
@@ -369,10 +421,22 @@ tools.json拡張例:
 }
 ```
 
+## 処理順序と依存関係
+
+- tools配列の**定義順**に処理を実行
+- 7zipは必ず最初に定義し、他のextract処理より先に実行すること
+- TortoiseGitプラグインはTortoiseGitより後に定義すること
+
+**推奨順序例:**
+1. 7zip（必須・最初）
+2. その他のinstaller（Git, TortoiseGit, TortoiseGitプラグイン, Chrome, TeraTerm, WinMerge, Sakura）
+3. extract（JDK, Eclipse, WebLogic, Eclipse workspace, A5M2, SQL Developer）
+4. copy（ModHeader）
+
 ## 制約・前提条件
 
 - PowerShell 5.1（Windows標準）
 - 管理者権限が必要
-- 7-Zipは最初にインストールされ、他ツールの解凍に使用
+- 7-Zipは最初にインストールされ、他ツールの解凍に使用（installerタイプなので7z.exe不要）
 - 共有ディレクトリへのネットワークアクセスが必要
-- 各共有フォルダには1ファイルのみ存在する想定
+- 各共有フォルダには基本1ファイル（dbImportがある場合は2ファイル）
