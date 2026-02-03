@@ -15,8 +15,8 @@
 | TortoiseGitプラグイン | installer | |
 | Chrome | installer | |
 | ModHeader（Chromeプラグイン） | copy | ファイル配置のみ |
-| A5:SQL Mk-2 | extract + dbImport | ポータブル版、DB接続リストインポート |
-| SQL Developer | extract + dbImport | DB接続リストインポート |
+| A5:SQL Mk-2 | extract | ポータブル版、設定込み7z配布 |
+| SQL Developer | extract + configCopy | 本体extract後、接続設定ファイルをコピー |
 | WinMerge | installer | |
 | Sakura Editor | installer | |
 | Eclipse | extract | 設定済み7z配布 |
@@ -41,7 +41,7 @@ package-management/
         ├── FileManager.psm1       # ファイル取得・ハッシュ比較・バックアップ
         ├── Extractor.psm1         # 解凍処理
         ├── Installer.psm1         # exe/msi実行・レジストリ確認
-        ├── ConfigImporter.psm1    # DB接続インポート
+        ├── ConfigCopier.psm1      # 設定ファイルコピー
         └── FileCopier.psm1        # ファイルコピー
 ```
 
@@ -106,22 +106,16 @@ C:\dev-tools\logs\                 # defaults.logRoot
       "name": "a5m2",
       "type": "extract",
       "source": "a5m2",
-      "destination": "C:\\dev-tools\\a5m2",
-      "dbImport": {
-        "command": "A5M2.exe",
-        "args": "/import",
-        "importFile": "db-list.a5m2"
-      }
+      "destination": "C:\\dev-tools\\a5m2"
     },
     {
       "name": "sqldeveloper",
       "type": "extract",
       "source": "sqldeveloper",
       "destination": "C:\\dev-tools\\sqldeveloper",
-      "dbImport": {
-        "command": "sqldeveloper.exe",
-        "args": "/import",
-        "importFile": "connections.xml"
+      "configCopy": {
+        "source": "connections.xml",
+        "destination": "%APPDATA%\\SQL Developer\\connections.xml"
       }
     },
     {
@@ -167,10 +161,9 @@ C:\dev-tools\logs\                 # defaults.logRoot
 | required | - | true: 失敗時に即停止（7zip用） |
 | skipVersionCheck | - | true: バージョン確認をスキップ（プラグイン用） |
 | successCodes | - | 成功とみなす終了コードのリスト（defaultsを上書き） |
-| dbImport | - | DB接続インポート設定 |
-| dbImport.command | - | 実行コマンド |
-| dbImport.args | - | コマンド引数 |
-| dbImport.importFile | - | インポートファイル名（共有フォルダ内） |
+| configCopy | - | 設定ファイルコピー設定 |
+| configCopy.source | - | コピー元ファイル名（共有フォルダ内） |
+| configCopy.destination | - | コピー先パス（環境変数使用可） |
 
 #### repositories配列
 | キー | 説明 |
@@ -197,8 +190,8 @@ Gitアクセストークンを入力してください: ********
 ツールごとにフラットなフォルダ構成。
 
 - 基本: 1フォルダに1ファイル（アーカイブまたはインストーラー）
-- dbImportがある場合: 本体 + インポートファイルの2ファイル
-- **複数ファイル検出時**: 該当ツールをFAILEDとしてスキップ（dbImportファイル除く）
+- configCopyがある場合: 本体 + 設定ファイルの2ファイル
+- **複数ファイル検出時**: 該当ツールをFAILEDとしてスキップ（configCopyファイル除く）
 
 ```
 \\server\share\packages\
@@ -211,11 +204,10 @@ Gitアクセストークンを入力してください: ********
 ├── git\
 │   └── Git-2.43.0-64-bit.exe
 ├── a5m2\
-│   ├── a5m2-2.17.7z              # アプリ本体
-│   └── db-list.a5m2              # DB接続リスト（dbImport用）
+│   └── a5m2-2.17.7z              # 設定込み（Portableフォルダ含む）
 ├── sqldeveloper\
-│   ├── sqldeveloper-23.1.7z      # アプリ本体
-│   └── connections.xml           # DB接続リスト（dbImport用）
+│   ├── sqldeveloper-20.x.7z      # アプリ本体
+│   └── connections.xml           # 接続設定ファイル（configCopy用）
 └── ...
 ```
 
@@ -267,7 +259,7 @@ Main.ps1
                   │       ├─ extract → [Extractor] 解凍（既存はbkへ）
                   │       └─ copy → [FileCopier] コピー
                   │
-                  ├─ dbImportあり → [ConfigImporter] DB接続インポート
+                  ├─ configCopyあり → [ConfigCopier] 設定ファイルコピー
                   │
                   └─ 結果記録（SUCCESS/SKIPPED/FAILED + 理由）
            │
@@ -337,17 +329,17 @@ Main.ps1
             └─ コピー対象は自動判定（ファイル/フォルダ）
 ```
 
-### dbImport処理フロー
+### configCopy処理フロー
 
 ```
-dbImport設定あり
+configCopy設定あり
     │
-    ├─ インポートファイルを共有からlocalRootにコピー
-    │   例: \\server\share\packages\a5m2\db-list.a5m2
-    │     → C:\packages\a5m2\db-list.a5m2
+    ├─ 設定ファイルを共有から指定先にコピー
+    │   例: \\server\share\packages\sqldeveloper\connections.xml
+    │     → %APPDATA%\SQL Developer\connections.xml
     │
-    └─ インポートコマンド実行
-        例: C:\dev-tools\a5m2\A5M2.exe /import C:\packages\a5m2\db-list.a5m2
+    └─ コピー先に既存ファイルがある場合
+        └─ bk/yyyyMMdd-HHmmss/ にバックアップ後、上書き
 ```
 
 ## バックアップ仕様
@@ -401,7 +393,7 @@ dbImport設定あり
 | **FileManager.psm1** | ハッシュ計算（SHA256）、ファイル比較、取得（進行度付き）、バックアップ（ファイル移動） |
 | **Extractor.psm1** | 7z/zip解凍、解凍先バックアップ（圧縮→移動） |
 | **Installer.psm1** | exe/msiサイレント実行、終了コード確認、レジストリバージョン確認 |
-| **ConfigImporter.psm1** | DB接続インポートコマンド実行、インポートファイルのコピー |
+| **ConfigCopier.psm1** | 設定ファイルコピー（環境変数展開対応） |
 | **FileCopier.psm1** | ファイル/フォルダコピー（自動判定）、ハッシュ比較 |
 
 ## 進行度表示
@@ -523,6 +515,37 @@ dbImport設定あり
 
 ※バージョン列は将来実装。現時点は `-` で表示。
 
+## A5M2・SQL Developer の設定配布方式検討
+
+### 背景
+
+両ツールともコマンドラインでのDB接続インポート機能が制限されている：
+- **A5M2**: A5M2cmd.exe（CLI）はGUI版のDB登録設定を直接利用不可
+- **SQL Developer 20.x**: SQLcl Connection Manager は 23.3以降のみ
+
+### 設定ファイルの保存場所
+
+| ツール | アプリ本体 | 設定ファイル |
+|--------|-----------|-------------|
+| A5M2（ポータブル） | `C:\dev-tools\a5m2\` | `C:\dev-tools\a5m2\Portable\` ← 同一フォルダ内 |
+| SQL Developer | `C:\dev-tools\sqldeveloper\` | `%APPDATA%\SQL Developer\` ← 別の場所 |
+
+### 採用方式（現行）
+
+| ツール | 方式 | 詳細 |
+|--------|------|------|
+| A5M2 | 設定込み7z配布 | Portableフォルダを含む7zを配布、extractのみで完了 |
+| SQL Developer | extract + configCopy | 本体extract後、connections.xmlを%APPDATA%にコピー |
+
+### 代替案（将来の簡略化）
+
+処理を単純化する場合：
+1. 両ツールとも extract のみ
+2. 設定ファイルは共有に配置（手動インポート前提）
+3. ログに「接続設定は手動でインポートしてください」と案内
+
+この場合、configCopy機能は削除し、手動インポート手順をドキュメント化する。
+
 ## 将来実装予定
 
 ### バージョン比較機能
@@ -564,4 +587,25 @@ tools.json拡張例:
 - 管理者権限が必要
 - 7-Zipは最初にインストールされ、他ツールの解凍に使用（installerタイプなので7z.exe不要）
 - 共有ディレクトリへのネットワークアクセスが必要
-- 各共有フォルダには基本1ファイル（dbImportがある場合は2ファイル）
+- 各共有フォルダには基本1ファイル（configCopyがある場合は2ファイル）
+
+## PowerShell 5.1 互換性に関する注意
+
+### ConvertFrom-Json の制限
+
+`-AsHashtable` オプションはPowerShell 6.0以降のみ使用可能。
+PowerShell 5.1では `PSCustomObject` として読み込み、ドット記法でアクセスする。
+
+```powershell
+# PS5.1での正しい使い方
+$config = Get-Content $path -Raw | ConvertFrom-Json
+$sourceRoot = $config.defaults.sourceRoot    # ドット記法でアクセス
+
+# PS6+でのみ使用可（本プロジェクトでは使用不可）
+# $config = Get-Content $path -Raw | ConvertFrom-Json -AsHashtable
+```
+
+### その他の注意点
+
+- `Expand-Archive` は .zip のみ対応、.7z は 7z.exe を使用
+- 環境変数の展開は `[Environment]::ExpandEnvironmentVariables()` を使用
